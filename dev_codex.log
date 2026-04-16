@@ -148,3 +148,8 @@
 - 页面任务状态统一显示为 Running、Completed 和 Interrupted。
 - 后端正常完成状态改为 completed。
 - 启动失败、session 缺失、删除 tmux 和手动终止统一归为 interrupted。
+
+## 2026-04-16 23:30 - Completed 状态保护
+
+- 已正常完成的任务点击“终止程序”时不再改变状态。
+- 已正常完成的任务点击“删除tmux”时只清理 tmux，不再改成 Interrupted。

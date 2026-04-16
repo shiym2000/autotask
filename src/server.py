@@ -235,6 +235,10 @@ def public_task(task: dict[str, Any]) -> dict[str, Any]:
     return dict(task)
 
 
+def is_completed_task(task: dict[str, Any]) -> bool:
+    return task.get("status") in {"completed", "finished"} or str(task.get("exit_code", "")) == "0"
+
+
 async def run_ssh_command(command: list[str], timeout: int = SSH_TIMEOUT) -> tuple[int, str, str]:
     async def execute() -> tuple[int, str, str]:
         proc = await asyncio.create_subprocess_exec(
@@ -546,11 +550,13 @@ async def delete_remote_task(task_id: str) -> dict[str, Any]:
     task = next((item for item in TASKS if str(item.get("id")) == task_id), None)
     if not task:
         raise ValueError("任务不存在")
+    was_completed = is_completed_task(task)
     session = str(task.get("session", ""))
     code, stdout, stderr = await run_ssh(str(task.get("host", "")), f"tmux kill-session -t {shlex.quote(session)}", timeout=SSH_TIMEOUT)
     if code != 0 and "can't find session" not in stderr.lower():
         raise RuntimeError(stderr.strip() or stdout.strip() or "删除 tmux session 失败")
-    task["status"] = "interrupted"
+    if not was_completed:
+        task["status"] = "interrupted"
     task["updated_at"] = time.time()
     save_tasks()
     return task
@@ -571,6 +577,10 @@ async def stop_remote_task(task_id: str) -> dict[str, Any]:
     task = next((item for item in TASKS if str(item.get("id")) == task_id), None)
     if not task:
         raise ValueError("任务不存在")
+    if is_completed_task(task):
+        task["status"] = "completed"
+        save_tasks()
+        return task
     session = str(task.get("session", ""))
     code, stdout, stderr = await run_ssh(str(task.get("host", "")), f"tmux send-keys -t {shlex.quote(session)} C-c", timeout=SSH_TIMEOUT)
     if code != 0:
