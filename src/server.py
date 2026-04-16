@@ -245,6 +245,18 @@ def mark_task_ended(task: dict[str, Any]) -> None:
         task["ended_at"] = time.time()
 
 
+def read_done_file(stdout: str) -> tuple[str, float | None]:
+    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    exit_code = lines[0] if lines else "0"
+    ended_at = None
+    if len(lines) > 1:
+        try:
+            ended_at = float(lines[1])
+        except ValueError:
+            ended_at = None
+    return exit_code, ended_at
+
+
 async def run_ssh_command(command: list[str], timeout: int = SSH_TIMEOUT) -> tuple[int, str, str]:
     async def execute() -> tuple[int, str, str]:
         proc = await asyncio.create_subprocess_exec(
@@ -438,9 +450,10 @@ async def refresh_task_status(task: dict[str, Any]) -> None:
     if done_file:
         done_code, stdout, _ = await run_ssh(host, f"cat {shlex.quote(done_file)} 2>/dev/null", timeout=CONNECT_TIMEOUT)
         if done_code == 0:
+            exit_code, ended_at = read_done_file(stdout)
             task["status"] = "completed"
-            task["exit_code"] = stdout.strip().splitlines()[-1] if stdout.strip() else "0"
-            mark_task_ended(task)
+            task["exit_code"] = exit_code
+            task["ended_at"] = ended_at or time.time()
             task["updated_at"] = time.time()
             return
     code, stdout, stderr = await run_ssh(host, f"tmux has-session -t {shlex.quote(session)}", timeout=CONNECT_TIMEOUT)
@@ -454,8 +467,7 @@ async def refresh_task_status(task: dict[str, Any]) -> None:
             task["last_error"] = (stderr.strip() or stdout.strip() or "任务状态刷新失败")
         return
     else:
-        capture_code, stdout, _ = await run_ssh(host, f"tmux capture-pane -pt {shlex.quote(session)} -S -80", timeout=CONNECT_TIMEOUT)
-        task["status"] = "completed" if capture_code == 0 and "[autotask] 程序已结束" in stdout else "running"
+        task["status"] = "running"
     task["updated_at"] = time.time()
 
 
@@ -500,7 +512,7 @@ async def start_remote_task(payload: dict[str, Any]) -> dict[str, Any]:
         f"rm -f {shlex.quote(done_file)}; "
         f"{env_prefix}{run_script}; "
         "rc=$?; "
-        f"printf '%s\\n' \"$rc\" > {shlex.quote(done_file)}; "
+        f"printf '%s\\n%s\\n' \"$rc\" \"$(date +%s)\" > {shlex.quote(done_file)}; "
         "printf '\\n[autotask] 程序已结束，退出码: %s\\n' \"$rc\"; "
         "exec bash"
     )
