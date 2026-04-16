@@ -158,3 +158,8 @@
 
 - 任务完成或中断时写入 `ended_at`。
 - Runner 运行时间优先使用 `ended_at`，后续清理 tmux 不再拉长运行时间。
+
+## 2026-04-17 00:00 - 打开 tmux 时自动 SSH
+
+- Runner 点击“打开tmux”时继续复制 tmux attach 命令。
+- 同时调用本地后端打开 macOS Terminal，并自动执行对应服务器的 `ssh <Host>`。

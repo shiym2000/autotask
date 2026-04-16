@@ -658,16 +658,25 @@
       $("configModal").classList.remove("hidden");
     }
 
-    function showAttach(id) {
+    async function showAttach(id) {
       const task = state.tasks.find((item) => item.id === id);
       if (!task) return;
       const command = task.tmux_command || `tmux attach -t ${task.session || ""}`;
       const line = $("attachLine");
       line.classList.remove("hidden");
-      line.textContent = `已复制：${command}`;
+      line.textContent = `已复制：${command}；正在打开 Terminal...`;
       navigator.clipboard?.writeText(command).catch(() => {
         line.textContent = command;
       });
+      try {
+        await api("/api/open_terminal", {
+          method: "POST",
+          body: JSON.stringify({ id }),
+        });
+        line.textContent = `已复制：${command}；已打开 ${task.host || "服务器"} 的 SSH 窗口`;
+      } catch (err) {
+        line.textContent = `已复制：${command}；打开 Terminal 失败：${err.message}`;
+      }
     }
 
     async function deleteTask(id) {

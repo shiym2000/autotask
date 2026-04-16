@@ -10,6 +10,7 @@ import os
 import re
 import shlex
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -613,6 +614,35 @@ async def capture_task_output(task_id: str) -> dict[str, str]:
     return {"output": stdout, "attach_command": str(task.get("attach_command", ""))}
 
 
+def applescript_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def open_terminal_for_task(task_id: str) -> dict[str, str]:
+    task = next((item for item in TASKS if str(item.get("id")) == task_id), None)
+    if not task:
+        raise ValueError("任务不存在")
+    host = str(task.get("host", "")).strip()
+    if not host:
+        raise ValueError("任务没有服务器信息")
+    command = f"ssh {shlex.quote(host)}"
+    script = (
+        'tell application "Terminal"\n'
+        "  activate\n"
+        f'  do script "{applescript_string(command)}"\n'
+        "end tell"
+    )
+    try:
+        subprocess.run(["osascript", "-e", script], check=True, capture_output=True, text=True, timeout=8)
+    except FileNotFoundError as exc:
+        raise RuntimeError("本机找不到 osascript，无法打开 Terminal") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("打开 Terminal 超时") from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError((exc.stderr or exc.stdout or "打开 Terminal 失败").strip()) from exc
+    return {"command": command}
+
+
 def attach_process_users(gpus: list[dict[str, Any]], users: dict[str, str]) -> None:
     for gpu in gpus:
         for proc in gpu.get("processes", []):
@@ -873,6 +903,21 @@ class GpuMonitorHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
             self.send_json({"ok": True, "task": public_task(task)})
+            return
+
+        if path == "/api/open_terminal":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8", errors="replace")
+            try:
+                payload = json.loads(raw)
+                result = open_terminal_for_task(str(payload.get("id", "")))
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "error": "请求不是合法 JSON"}, HTTPStatus.BAD_REQUEST)
+                return
+            except (ValueError, RuntimeError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"ok": True, **result})
             return
 
         if path != "/api/config":
