@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoTask4macOS Monitor</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f7f5;
+      --ink: #16211f;
+      --muted: #60706c;
+      --line: #d7dfdc;
+      --panel: #ffffff;
+      --panel-2: #eef5f2;
+      --good: #0c7a43;
+      --warn: #b15b00;
+      --bad: #b42318;
+      --accent: #147d8a;
+      --accent-2: #8b6f22;
+      --shadow: 0 14px 34px rgba(22, 33, 31, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    html { min-width: 320px; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #f7faf8 0%, var(--bg) 46%, #edf4f1 100%);
+      color: var(--ink);
+      letter-spacing: 0;
+    }
+
+    button, textarea { font: inherit; letter-spacing: 0; }
+    .wrap { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 44px; }
+    header {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      padding: 18px 0 22px;
+    }
+    h1 { margin: 0; font-size: clamp(28px, 5vw, 48px); line-height: 1; }
+    .lede { margin: 10px 0 0; color: var(--muted); max-width: 760px; line-height: 1.6; }
+    .top-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .btn {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 10px 14px;
+      cursor: pointer;
+      min-height: 42px;
+    }
+    .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn:hover { filter: brightness(0.98); }
+    .btn.loading { opacity: .78; pointer-events: none; }
+    .btn.loading::before {
+      content: "";
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-right: 7px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      vertical-align: -2px;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .metric, .server, .setup-panel {
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .metric { padding: 14px; min-height: 86px; }
+    .metric .label { color: var(--muted); font-size: 13px; }
+    .metric .value { display: block; margin-top: 8px; font-size: 24px; font-weight: 750; overflow-wrap: anywhere; }
+    .overview-toggle {
+      position: fixed;
+      right: 18px;
+      top: 18px;
+      z-index: 40;
+      box-shadow: var(--shadow);
+    }
+    .sidebar-scrim {
+      position: fixed;
+      inset: 0;
+      background: rgba(22, 33, 31, .22);
+      z-index: 50;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .18s ease;
+    }
+    .overview-sidebar {
+      position: fixed;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: min(320px, calc(100vw - 28px));
+      padding: 22px 16px;
+      background: rgba(255, 255, 255, .96);
+      border-left: 1px solid var(--line);
+      box-shadow: -18px 0 40px rgba(22, 33, 31, .14);
+      z-index: 60;
+      transform: translateX(104%);
+      transition: transform .18s ease;
+    }
+    .overview-sidebar.open {
+      transform: translateX(0);
+    }
+    .sidebar-scrim.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .overview-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .overview-head h2 { margin: 0; font-size: 20px; }
+    .status-strip {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .setup-panel { padding: 22px; margin-top: 14px; }
+    .setup-panel h2 { margin: 0 0 8px; font-size: 24px; }
+    .setup-panel p { color: var(--muted); line-height: 1.6; }
+    textarea {
+      width: 100%;
+      min-height: 240px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      color: var(--ink);
+      background: #fbfdfc;
+      line-height: 1.45;
+      white-space: pre;
+      overflow: auto;
+    }
+    .message { margin-top: 12px; color: var(--muted); min-height: 22px; }
+    .message.error { color: var(--bad); }
+    .message.good { color: var(--good); }
+    .modal-scrim {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(22, 33, 31, .34);
+    }
+    .modal {
+      width: min(720px, 100%);
+      max-height: min(760px, calc(100vh - 40px));
+      overflow: auto;
+      background: rgba(255, 255, 255, .97);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 22px 60px rgba(22, 33, 31, .20);
+      padding: 20px;
+    }
+    .modal h2 { margin: 0 0 8px; font-size: 24px; }
+    .modal p { color: var(--muted); line-height: 1.6; margin: 0 0 12px; }
+    .servers { display: grid; gap: 16px; }
+    .server { overflow: hidden; padding: 0; }
+    .server-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(90deg, #ffffff 0%, #f0f7f4 100%);
+      cursor: pointer;
+      list-style: none;
+    }
+    .server-head::-webkit-details-marker,
+    .gpu-summary::-webkit-details-marker {
+      display: none;
+    }
+    .server-title { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; min-width: 0; }
+    .server-title h2 { margin: 0; font-size: 22px; overflow-wrap: anywhere; }
+    .server.busy,
+    .gpu.busy {
+      border-color: rgba(177, 91, 0, .45);
+      box-shadow: 0 0 0 2px rgba(177, 91, 0, .12), var(--shadow);
+    }
+    .gpu.busy .gpu-summary {
+      background: #fff9e8;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 8px;
+      padding: 5px 8px;
+      font-size: 13px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: var(--panel);
+      white-space: nowrap;
+    }
+    .chip.good { color: var(--good); border-color: rgba(12, 122, 67, .25); }
+    .chip.bad { color: var(--bad); border-color: rgba(180, 35, 24, .25); }
+    .chip.warn { color: var(--warn); border-color: rgba(177, 91, 0, .25); }
+    .server-meta { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+    .gpu-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      padding: 10px;
+    }
+    .gpu {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fcfefd;
+      padding: 0;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .gpu h3 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+    .gpu-sub { color: var(--muted); margin: 2px 0 8px; font-size: 12px; }
+    .gpu-summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(180px, auto) minmax(110px, auto);
+      gap: 10px;
+      align-items: center;
+      cursor: pointer;
+      list-style: none;
+      padding: 9px 12px;
+      min-height: 54px;
+    }
+    .gpu-main { min-width: 0; }
+    .gpu-compact {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+    .gpu-compact span { color: var(--muted); font-size: 11px; }
+    .gpu-compact strong { font-size: 15px; overflow-wrap: anywhere; }
+    .gpu-detail {
+      border-top: 1px solid var(--line);
+      padding: 10px 12px;
+    }
+    .bar {
+      height: 10px;
+      background: #e2ebe8;
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 6px 0 8px;
+    }
+    .bar > span {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--good), var(--accent-2));
+    }
+    .gpu-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .stat {
+      background: var(--panel-2);
+      border-radius: 8px;
+      padding: 7px 9px;
+      min-height: 48px;
+    }
+    .stat span { display: block; color: var(--muted); font-size: 11px; }
+    .stat strong { display: block; margin-top: 2px; font-size: 15px; overflow-wrap: anywhere; }
+    .processes {
+      border-top: 1px solid var(--line);
+      padding-top: 8px;
+      overflow-x: auto;
+    }
+    .process-title { margin: 0 0 4px; font-size: 14px; }
+    summary { cursor: pointer; color: var(--ink); font-weight: 700; }
+    table { width: 100%; min-width: 560px; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }
+    th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+      cursor: pointer;
+      position: relative;
+      user-select: none;
+    }
+    th.sorted-asc::after { content: " ↑"; }
+    th.sorted-desc::after { content: " ↓"; }
+    .resize-handle {
+      position: absolute;
+      top: 0;
+      right: -3px;
+      width: 7px;
+      height: 100%;
+      cursor: col-resize;
+      user-select: none;
+      z-index: 2;
+    }
+    .resize-handle::after {
+      content: "";
+      display: block;
+      width: 1px;
+      height: 60%;
+      margin: 20% auto;
+      background: var(--line);
+    }
+    .pid-col { width: 112px; }
+    .mem-col { width: 118px; }
+    .pid-head,
+    .mem-head,
+    .pid-cell,
+    .mem-cell {
+      white-space: nowrap;
+      overflow-wrap: normal;
+      word-break: normal;
+    }
+    tr.busy-process {
+      background: #fff9e8;
+    }
+    .empty, .error-box {
+      color: var(--muted);
+      padding: 16px;
+      line-height: 1.6;
+    }
+    .error-box { color: var(--bad); }
+    .hidden { display: none !important; }
+
+    @media (max-width: 760px) {
+      .wrap { width: min(100% - 20px, 1180px); padding-top: 16px; }
+      header { grid-template-columns: 1fr; align-items: start; }
+      .top-actions { justify-content: flex-start; }
+      .server-head { grid-template-columns: 1fr; }
+      .gpu-list { padding: 8px; }
+      .gpu-summary { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <button class="btn primary overview-toggle" id="overviewToggle">概览</button>
+  <div class="sidebar-scrim" id="sidebarScrim"></div>
+  <aside class="overview-sidebar" id="overviewSidebar" aria-label="概览侧边栏">
+    <div class="overview-head">
+      <h2>概览</h2>
+      <button class="btn" id="overviewClose">关闭</button>
+    </div>
+    <section class="status-strip" aria-label="概览">
+      <div class="metric"><span class="label">服务器</span><strong class="value" id="serverCount">0</strong></div>
+      <div class="metric"><span class="label">GPU</span><strong class="value" id="gpuCount">0</strong></div>
+      <div class="metric"><span class="label">在线</span><strong class="value" id="onlineCount">0</strong></div>
+      <div class="metric"><span class="label">刷新</span><strong class="value" id="lastUpdated">等待中</strong></div>
+    </section>
+  </aside>
+  <main class="wrap">
+    <header>
+      <div>
+        <h1>AutoTask4macOS Monitor</h1>
+        <p class="lede">远程服务器的 GPU 状态默认手动刷新。首次使用只需要粘贴 SSH config，之后双击应用就能直接查看。</p>
+      </div>
+      <div class="top-actions">
+        <button class="btn" id="editConfigBtn">编辑服务器</button>
+        <button class="btn" id="highlightBtn">使用高亮</button>
+        <button class="btn primary" id="refreshBtn">刷新</button>
+      </div>
+    </header>
+
+    <div class="modal-scrim hidden" id="configModal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="configTitle">
+        <h2 id="configTitle">编辑服务器</h2>
+        <p>把 SSH config 原文粘贴到这里。保存后，监控会自动开始。</p>
+        <textarea id="configText" spellcheck="false" placeholder="Host gpu-box-01&#10;  HostName gpu.example.com&#10;  User yourname&#10;  Port 22"></textarea>
+        <div class="top-actions" style="justify-content:flex-start;margin-top:12px">
+          <button class="btn primary" id="saveConfigBtn">保存并开始监控</button>
+          <button class="btn" id="cancelConfigBtn">取消</button>
+        </div>
+        <div class="message" id="configMessage"></div>
+      </section>
+    </div>
+
+    <section class="servers" id="servers"></section>
+  </main>
+
+  <script>
+    const state = {
+      config: null,
+      heartbeatTimer: null,
+      editingConfig: false,
+      highlightBusy: false,
+      processSorts: {},
+    };
+    const $ = (id) => document.getElementById(id);
+    const fmt = (value, suffix = "") => value === null || value === undefined || value === "" ? "未知" : `${value}${suffix}`;
+    const gb = (value) => value === null || value === undefined ? "未知" : `${(value / 1024).toFixed(1)} GB`;
+    const pct = (value) => value === null || value === undefined ? "未知" : `${value}%`;
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        ...options,
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "请求失败");
+      return payload;
+    }
+
+    function sendHeartbeat() {
+      fetch("/api/heartbeat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        keepalive: true,
+      }).catch(() => {});
+    }
+
+    function shutdownServer() {
+      if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
+      const payload = new Blob(["{}"], { type: "application/json" });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/api/shutdown", payload);
+        return;
+      }
+      fetch("/api/shutdown", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        keepalive: true,
+      }).catch(() => {});
+    }
+
+    function setMessage(text, type = "") {
+      const el = $("configMessage");
+      el.textContent = text;
+      el.className = `message ${type}`;
+    }
+
+    async function loadConfig() {
+      try {
+        state.config = await api("/api/config");
+        $("configText").value = state.config.config_text || "";
+        if (!state.config.configured) showSetup(true);
+      } catch (err) {
+        showSetup(true);
+        setMessage(`无法读取配置：${err.message}`, "error");
+      }
+    }
+
+    function showSetup(show) {
+      state.editingConfig = show;
+      $("configModal").classList.toggle("hidden", !show);
+      $("cancelConfigBtn").classList.toggle("hidden", !state.config?.configured);
+    }
+
+    async function saveConfig() {
+      setMessage("正在保存...");
+      try {
+        const payload = await api("/api/config", {
+          method: "POST",
+          body: JSON.stringify({ config_text: $("configText").value }),
+        });
+        state.config = { ...(state.config || {}), configured: true, hosts: payload.hosts, config_text: $("configText").value };
+        setMessage("已保存，正在开始监控。", "good");
+        showSetup(false);
+        await refreshStatus(true);
+      } catch (err) {
+        setMessage(err.message, "error");
+      }
+    }
+
+    function renderSummary(results, updatedAt) {
+      const online = results.filter((item) => item.ok).length;
+      const gpuCount = results.reduce((sum, item) => sum + (item.gpus ? item.gpus.length : 0), 0);
+      $("serverCount").textContent = String(results.length || state.config?.hosts?.length || 0);
+      $("gpuCount").textContent = String(gpuCount);
+      $("onlineCount").textContent = String(online);
+      $("lastUpdated").textContent = updatedAt ? new Date(updatedAt * 1000).toLocaleTimeString() : "等待中";
+    }
+
+    function collectOpenState() {
+      const openServers = new Set([...document.querySelectorAll("details.server[data-key][open]")].map((item) => item.dataset.key));
+      const knownServers = new Set([...document.querySelectorAll("details.server[data-key]")].map((item) => item.dataset.key));
+      const openGpus = new Set([...document.querySelectorAll("details.gpu[data-key][open]")].map((item) => item.dataset.key));
+      return { openServers, knownServers, openGpus };
+    }
+
+    function isHighlightedProcess(proc, highlightUser) {
+      return Boolean(highlightUser) && proc.user === highlightUser;
+    }
+
+    function renderGpu(gpu, serverAlias, openState, highlightUser) {
+      const mem = gpu.memory || {};
+      const usedPercent = mem.used_percent || 0;
+      const key = `${serverAlias}::${gpu.index}`;
+      const openAttr = openState.openGpus.has(key) ? " open" : "";
+      const isBusy = (gpu.processes || []).some((proc) => isHighlightedProcess(proc, highlightUser));
+      const busyClass = state.highlightBusy && isBusy ? " busy" : "";
+      const sortState = state.processSorts[key] || { key: "pid", direction: "asc" };
+      const processRows = [...(gpu.processes || [])].sort((a, b) => {
+        const direction = sortState.direction === "asc" ? 1 : -1;
+        let av = sortState.key === "memory" ? (a.used_memory_mib || 0) : a[sortState.key];
+        let bv = sortState.key === "memory" ? (b.used_memory_mib || 0) : b[sortState.key];
+        if (sortState.key === "pid") {
+          av = Number(av || 0);
+          bv = Number(bv || 0);
+        }
+        if (av === bv) return 0;
+        return av > bv ? direction : -direction;
+      }).map((proc) => `
+        <tr${state.highlightBusy && isHighlightedProcess(proc, highlightUser) ? " class=\"busy-process\"" : ""}>
+          <td class="pid-cell">${escapeHtml(proc.pid || "")}</td>
+          <td class="mem-cell">${gb(proc.used_memory_mib)}</td>
+          <td>${escapeHtml(proc.name || "")}</td>
+        </tr>
+      `).join("");
+
+      return `
+        <details class="gpu${busyClass}" data-key="${escapeHtml(key)}"${openAttr}>
+          <summary class="gpu-summary">
+            <div class="gpu-main">
+              <h3>#${gpu.index} ${escapeHtml(gpu.name)}</h3>
+            </div>
+            <div class="gpu-compact"><span>显存</span><strong>${gb(mem.used_mib)} / ${gb(mem.total_mib)}</strong></div>
+            <div class="gpu-compact"><span>使用率</span><strong>${pct(gpu.utilization_percent)}</strong></div>
+          </summary>
+          <div class="gpu-detail">
+            <div class="processes">
+              <h4 class="process-title">进程数：${gpu.processes?.length || 0}</h4>
+              ${processRows ? `
+                <table class="process-table" data-table-key="${escapeHtml(key)}">
+                  <colgroup>
+                    <col class="pid-col">
+                    <col class="mem-col">
+                    <col>
+                  </colgroup>
+                  <thead><tr>
+                    <th class="pid-head ${sortState.key === "pid" ? `sorted-${sortState.direction}` : ""}" data-process-sort="pid">PID</th>
+                    <th class="mem-head ${sortState.key === "memory" ? `sorted-${sortState.direction}` : ""}" data-process-sort="memory">显存</th>
+                    <th class="${sortState.key === "name" ? `sorted-${sortState.direction}` : ""}" data-process-sort="name">进程名</th>
+                  </tr></thead>
+                  <tbody>${processRows}</tbody>
+                </table>
+              ` : `<div class="empty">当前没有 GPU 进程。</div>`}
+            </div>
+          </div>
+        </details>
+      `;
+    }
+
+    function renderServers(results) {
+      if (!state.config?.configured && !results.length) {
+        $("servers").innerHTML = "";
+        return;
+      }
+      if (!results.length) {
+        $("servers").innerHTML = `<section class="server"><div class="empty">正在等待第一次采集。</div></section>`;
+        return;
+      }
+      const openState = collectOpenState();
+      $("servers").innerHTML = results.map((server) => {
+        const serverKey = server.alias;
+        const serverOpen = openState.knownServers.has(serverKey) ? openState.openServers.has(serverKey) : false;
+        const openAttr = serverOpen ? " open" : "";
+        const highlightUser = (server.user || "").trim();
+        const serverBusy = (server.gpus || []).some((gpu) => (gpu.processes || []).some((proc) => isHighlightedProcess(proc, highlightUser)));
+        const busyClass = state.highlightBusy && serverBusy ? " busy" : "";
+        const status = server.ok
+          ? `<span class="chip good">在线</span>`
+          : `<span class="chip bad">错误</span>`;
+        const login = server.user ? `${server.user}@${server.hostname || server.alias}` : (server.hostname || server.alias);
+        const meta = `${login}${server.port ? `:${server.port}` : ""}`;
+        const body = server.ok
+          ? `<div class="gpu-list">${(server.gpus || []).map((gpu) => renderGpu(gpu, server.alias, openState, highlightUser)).join("")}</div>`
+          : `<div class="error-box">${escapeHtml(server.error || "无法采集这台服务器")}</div>`;
+        return `
+          <details class="server${busyClass}" data-key="${escapeHtml(serverKey)}"${openAttr}>
+            <summary class="server-head">
+              <div>
+                <div class="server-title"><h2>${escapeHtml(server.alias)}</h2>${status}</div>
+                <div class="server-meta">${escapeHtml(meta || server.hostname || "")}</div>
+              </div>
+              <span class="chip warn">${server.latency_ms === null ? "等待" : `${server.latency_ms} ms`}</span>
+            </summary>
+            ${body}
+          </details>
+        `;
+      }).join("");
+      enableColumnResize($("servers"));
+    }
+
+    function enableColumnResize(root) {
+      root.querySelectorAll("table").forEach((table) => {
+        const cols = [...table.querySelectorAll("col")];
+        table.querySelectorAll("thead th").forEach((th, index) => {
+          if (th.querySelector(".resize-handle")) return;
+          const handle = document.createElement("span");
+          handle.className = "resize-handle";
+          th.appendChild(handle);
+          handle.addEventListener("click", (event) => event.stopPropagation());
+          handle.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const col = cols[index];
+            const startX = event.clientX;
+            const startWidth = col.getBoundingClientRect().width || th.getBoundingClientRect().width;
+            const onMove = (moveEvent) => {
+              const next = Math.max(54, startWidth + moveEvent.clientX - startX);
+              col.style.width = `${next}px`;
+            };
+            const onUp = () => {
+              document.removeEventListener("mousemove", onMove);
+              document.removeEventListener("mouseup", onUp);
+            };
+            document.addEventListener("mousemove", onMove);
+            document.addEventListener("mouseup", onUp);
+          });
+        });
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function toggleServerGpus(serverDetails) {
+      const gpus = [...serverDetails.querySelectorAll("details.gpu")];
+      if (!gpus.length) return;
+      serverDetails.open = true;
+      const shouldOpen = gpus.some((gpu) => !gpu.open);
+      gpus.forEach((gpu) => {
+        gpu.open = shouldOpen;
+      });
+    }
+
+    function setOverviewOpen(open) {
+      $("overviewSidebar").classList.toggle("open", open);
+      $("sidebarScrim").classList.toggle("open", open);
+      $("overviewToggle").textContent = open ? "收起概览" : "概览";
+    }
+
+    async function refreshStatus(force = false) {
+      try {
+        const status = await api(force ? "/api/status?refresh=1" : "/api/status");
+        renderSummary(status.results || [], status.updated_at);
+        renderServers(status.results || []);
+      } catch (err) {
+        $("servers").innerHTML = `<section class="server"><div class="error-box">后台服务没有响应：${escapeHtml(err.message)}</div></section>`;
+      }
+    }
+
+    async function withButtonLoading(button, action) {
+      button.classList.add("loading");
+      button.disabled = true;
+      try {
+        await action();
+      } finally {
+        button.classList.remove("loading");
+        button.disabled = false;
+      }
+    }
+
+    $("saveConfigBtn").addEventListener("click", saveConfig);
+    $("editConfigBtn").addEventListener("click", () => showSetup(true));
+    $("cancelConfigBtn").addEventListener("click", () => showSetup(false));
+    $("refreshBtn").addEventListener("click", (event) => {
+      withButtonLoading(event.currentTarget, () => refreshStatus(true));
+    });
+    $("overviewToggle").addEventListener("click", () => setOverviewOpen(!$("overviewSidebar").classList.contains("open")));
+    $("overviewClose").addEventListener("click", () => setOverviewOpen(false));
+    $("sidebarScrim").addEventListener("click", () => setOverviewOpen(false));
+    $("configModal").addEventListener("click", (event) => {
+      if (event.target.id === "configModal" && state.config?.configured) showSetup(false);
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        setOverviewOpen(false);
+        if (state.config?.configured) showSetup(false);
+      }
+    });
+    $("highlightBtn").addEventListener("click", () => {
+      state.highlightBusy = !state.highlightBusy;
+      $("highlightBtn").textContent = state.highlightBusy ? "取消高亮" : "使用高亮";
+      refreshStatus(false);
+    });
+    $("servers").addEventListener("dblclick", (event) => {
+      const head = event.target.closest(".server-head");
+      if (!head) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const serverDetails = head.closest("details.server");
+      if (serverDetails) toggleServerGpus(serverDetails);
+    });
+    $("servers").addEventListener("click", (event) => {
+      const th = event.target.closest("[data-process-sort]");
+      if (!th) return;
+      const table = th.closest("table[data-table-key]");
+      if (!table) return;
+      const key = table.dataset.tableKey;
+      const current = state.processSorts[key] || { key: "pid", direction: "asc" };
+      state.processSorts[key] = {
+        key: th.dataset.processSort,
+        direction: current.key === th.dataset.processSort && current.direction === "asc" ? "desc" : "asc",
+      };
+      refreshStatus(false);
+    });
+    window.addEventListener("pagehide", shutdownServer);
+    window.addEventListener("beforeunload", shutdownServer);
+
+    (async function boot() {
+      sendHeartbeat();
+      state.heartbeatTimer = setInterval(sendHeartbeat, 2000);
+      await loadConfig();
+      await refreshStatus(true);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoTask4macOS Runner</title>
+  <style>
+    :root {
+      --bg: #f4f7f5;
+      --ink: #16211f;
+      --muted: #60706c;
+      --line: #d7dfdc;
+      --panel: #ffffff;
+      --panel-2: #eef5f2;
+      --good: #0c7a43;
+      --warn: #b15b00;
+      --bad: #b42318;
+      --accent: #147d8a;
+      --shadow: 0 14px 34px rgba(22, 33, 31, .10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #f7faf8 0%, var(--bg) 48%, #edf4f1 100%);
+      color: var(--ink);
+      letter-spacing: 0;
+    }
+    button, input, textarea, select { font: inherit; letter-spacing: 0; }
+    .wrap { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 26px 0 44px; }
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: end;
+      padding: 18px 0 20px;
+    }
+    h1 { margin: 0; font-size: clamp(28px, 5vw, 46px); line-height: 1; }
+    h2 { margin: 0 0 12px; font-size: 22px; }
+    .lede { margin: 10px 0 0; color: var(--muted); line-height: 1.6; max-width: 760px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+    .btn {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 10px 14px;
+      min-height: 40px;
+      cursor: pointer;
+    }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.small { min-height: 32px; padding: 5px 8px; font-size: 13px; }
+    .btn.loading { opacity: .78; pointer-events: none; }
+    .btn.loading::before {
+      content: "";
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-right: 7px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      vertical-align: -2px;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+    .panel {
+      background: rgba(255, 255, 255, .9);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+      min-width: 0;
+    }
+    label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--ink);
+      background: #fbfdfc;
+    }
+    select[multiple] { min-height: 120px; }
+    .gpu-choices {
+      display: grid;
+      gap: 8px;
+      max-height: 180px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdfc;
+      padding: 8px;
+    }
+    .gpu-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      color: var(--ink);
+      margin: 0;
+      cursor: pointer;
+    }
+    .gpu-option input {
+      width: auto;
+      margin: 0;
+    }
+    textarea { min-height: 190px; resize: vertical; white-space: pre; overflow: auto; }
+    .field { margin-bottom: 12px; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 5px; line-height: 1.4; }
+    .message { min-height: 22px; color: var(--muted); margin-top: 8px; }
+    .message.error { color: var(--bad); }
+    .message.good { color: var(--good); }
+    .modal-scrim {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(22, 33, 31, .34);
+    }
+    .modal {
+      width: min(720px, 100%);
+      max-height: min(760px, calc(100vh - 40px));
+      overflow: auto;
+      background: rgba(255, 255, 255, .97);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 22px 60px rgba(22, 33, 31, .20);
+      padding: 20px;
+    }
+    .modal.narrow { width: min(540px, 100%); }
+    .task-table-panel { overflow-x: auto; }
+    table { width: 100%; min-width: 720px; border-collapse: collapse; table-layout: fixed; }
+    th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 8px 7px; overflow-wrap: anywhere; vertical-align: top; }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+    }
+    th.sorted-asc::after { content: " ↑"; }
+    th.sorted-desc::after { content: " ↓"; }
+    .resize-handle {
+      position: absolute;
+      top: 0;
+      right: -3px;
+      width: 7px;
+      height: 100%;
+      cursor: col-resize;
+      user-select: none;
+      z-index: 2;
+    }
+    .resize-handle::after {
+      content: "";
+      display: block;
+      width: 1px;
+      height: 60%;
+      margin: 20% auto;
+      background: var(--line);
+    }
+    .col-name { width: 24%; }
+    .col-host { width: 10%; }
+    .col-gpus { width: 10%; }
+    .col-status { width: 10%; }
+    .col-start { width: 14%; }
+    .col-duration { width: 10%; }
+    .col-actions { width: 22%; }
+    td:nth-child(2),
+    td:nth-child(4),
+    td:nth-child(5),
+    td:nth-child(6) {
+      white-space: nowrap;
+      overflow-wrap: normal;
+    }
+    .status-running { color: var(--good); font-weight: 700; }
+    .status-stopped { color: var(--muted); font-weight: 700; }
+    .status-failed { color: var(--bad); font-weight: 700; }
+    .task-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(68px, 1fr));
+      gap: 6px;
+      align-items: stretch;
+    }
+    .task-actions .btn {
+      width: 100%;
+      padding: 5px 6px;
+      white-space: nowrap;
+    }
+    .output-box {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #101816;
+      color: #e7f1ee;
+      padding: 12px;
+      white-space: pre-wrap;
+      overflow: auto;
+      max-height: 360px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    .attach-line {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--panel-2);
+      overflow-wrap: anywhere;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    .hidden { display: none !important; }
+    @media (max-width: 880px) {
+      header, .grid { grid-template-columns: 1fr; }
+      .actions { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <div>
+        <h1>AutoTask4macOS Runner</h1>
+        <p class="lede">选择服务器和 GPU，输入任务名与远端 sh 脚本路径，后台会在远端创建 tmux session 并运行。</p>
+      </div>
+      <div class="actions">
+        <button class="btn" id="editConfigBtn">编辑服务器</button>
+        <button class="btn primary" id="addTaskBtn">添加任务</button>
+        <button class="btn primary" id="refreshBtn">刷新</button>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div class="panel task-table-panel">
+        <h2>运行任务</h2>
+        <table>
+          <colgroup>
+            <col class="col-name">
+            <col class="col-host">
+            <col class="col-gpus">
+            <col class="col-status">
+            <col class="col-start">
+            <col class="col-duration">
+            <col class="col-actions">
+          </colgroup>
+          <thead>
+            <tr>
+              <th data-sort="name">任务名</th>
+              <th data-sort="host">服务器</th>
+              <th data-sort="gpus">显卡号</th>
+              <th data-sort="status">任务状态</th>
+              <th data-sort="started_at">开始时间</th>
+              <th data-sort="duration">运行时间</th>
+              <th data-sort="actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="taskRows"></tbody>
+        </table>
+        <div class="output-box hidden" id="taskOutput"></div>
+        <div class="attach-line hidden" id="attachLine"></div>
+      </div>
+    </section>
+
+    <div class="modal-scrim hidden" id="taskModal">
+      <section class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="taskTitle">
+        <h2 id="taskTitle">添加任务</h2>
+        <div class="field">
+          <label for="serverSelect">服务器</label>
+          <select id="serverSelect"></select>
+        </div>
+        <div class="field">
+          <label>显卡</label>
+          <div class="gpu-choices" id="gpuChoices"></div>
+          <div class="hint">可多选，也可以不选；不选时不会设置 CUDA_VISIBLE_DEVICES。</div>
+        </div>
+        <div class="field">
+          <label for="condaSelect">conda环境</label>
+          <select id="condaSelect"></select>
+          <div class="hint">选择远端服务器上的 Conda 环境；不选则直接 bash 运行脚本。</div>
+        </div>
+        <div class="field">
+          <label for="taskName">任务名</label>
+          <input id="taskName" placeholder="例如 train_llama_0420">
+        </div>
+        <div class="field">
+          <label for="scriptPath">远端sh脚本路径</label>
+          <input id="scriptPath" value="~/projects/autotask.sh" placeholder="例如 ~/projects/autotask.sh">
+        </div>
+        <button class="btn primary" id="startTaskBtn">启动 tmux 任务</button>
+        <button class="btn" id="cancelTaskBtn">取消</button>
+        <div class="message" id="taskMessage"></div>
+      </section>
+    </div>
+
+    <div class="modal-scrim hidden" id="configModal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="configTitle">
+        <h2 id="configTitle">编辑服务器</h2>
+        <textarea id="configText" spellcheck="false"></textarea>
+        <div class="actions" style="justify-content:flex-start;margin-top:10px">
+          <button class="btn primary" id="saveConfigBtn">保存配置</button>
+          <button class="btn" id="cancelConfigBtn">取消</button>
+        </div>
+        <div class="message" id="configMessage"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const state = {
+      config: null,
+      status: null,
+      selectedHost: "",
+      selectedGpus: new Set(),
+      tasks: [],
+      sortKey: "started_at",
+      sortDirection: "desc",
+      timer: null,
+      heartbeatTimer: null,
+      gpuCache: {},
+    };
+    const $ = (id) => document.getElementById(id);
+    const gb = (value) => value === null || value === undefined ? "未知" : `${(value / 1024).toFixed(1)} GB`;
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        ...options,
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "请求失败");
+      return payload;
+    }
+
+    function shutdownServer() {
+      if (state.timer) clearInterval(state.timer);
+      if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
+      const payload = new Blob(["{}"], { type: "application/json" });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/api/shutdown", payload);
+        return;
+      }
+      fetch("/api/shutdown", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        keepalive: true,
+      }).catch(() => {});
+    }
+
+    function sendHeartbeat() {
+      fetch("/api/heartbeat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        keepalive: true,
+      }).catch(() => {});
+    }
+
+    function message(id, text, type = "") {
+      const el = $(id);
+      el.textContent = text;
+      el.className = `message ${type}`;
+    }
+
+    function fmtTime(ts) {
+      if (!ts) return "未知";
+      const date = new Date(ts * 1000);
+      const pad = (value) => String(value).padStart(2, "0");
+      return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
+    }
+
+    function fmtDuration(task) {
+      if (!task.started_at) return "未知";
+      const end = task.status === "running" ? Date.now() / 1000 : (task.updated_at || Date.now() / 1000);
+      const seconds = Math.max(0, Math.floor(end - task.started_at));
+      const hours = seconds / 3600;
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      return hours >= 1 ? `${hours.toFixed(1)}h` : `${m}m ${s}s`;
+    }
+
+    async function withButtonLoading(button, action) {
+      button.classList.add("loading");
+      button.disabled = true;
+      try {
+        await action();
+      } finally {
+        button.classList.remove("loading");
+        button.disabled = false;
+      }
+    }
+
+    function sortedTasks() {
+      const tasks = [...state.tasks];
+      const key = state.sortKey;
+      const direction = state.sortDirection === "asc" ? 1 : -1;
+      return tasks.sort((a, b) => {
+        let av = key === "duration" ? (Date.now() / 1000 - (a.started_at || 0)) : a[key];
+        let bv = key === "duration" ? (Date.now() / 1000 - (b.started_at || 0)) : b[key];
+        if (key === "actions") return 0;
+        if (Array.isArray(av)) av = av.join(",");
+        if (Array.isArray(bv)) bv = bv.join(",");
+        if (av === bv) return 0;
+        return av > bv ? direction : -direction;
+      });
+    }
+
+    function renderSortHeaders() {
+      document.querySelectorAll("thead th[data-sort]").forEach((th) => {
+        th.classList.toggle("sorted-asc", th.dataset.sort === state.sortKey && state.sortDirection === "asc");
+        th.classList.toggle("sorted-desc", th.dataset.sort === state.sortKey && state.sortDirection === "desc");
+      });
+    }
+
+    function renderServers() {
+      const hosts = state.config?.hosts || [];
+      if ((!state.selectedHost || !hosts.some((host) => host.alias === state.selectedHost)) && hosts.length) {
+        state.selectedHost = hosts[0].alias;
+      }
+      $("serverSelect").innerHTML = hosts.map((host) => {
+        const selected = host.alias === state.selectedHost ? " selected" : "";
+        return `<option value="${escapeHtml(host.alias)}"${selected}>${escapeHtml(host.alias)}</option>`;
+      }).join("");
+    }
+
+    function renderGpus() {
+      const result = state.gpuCache[state.selectedHost] || (state.status?.results || []).find((item) => item.alias === state.selectedHost);
+      const gpus = result?.gpus || [];
+      if (result && !result.ok) {
+        $("gpuChoices").innerHTML = `<div class="hint">显卡读取失败：${escapeHtml(result.error || "无法读取这台服务器")}</div>`;
+        return;
+      }
+      $("gpuChoices").innerHTML = gpus.map((gpu) => {
+        const checked = state.selectedGpus.has(String(gpu.index)) ? " checked" : "";
+        return `
+          <label class="gpu-option">
+            <input type="checkbox" value="${gpu.index}"${checked}>
+            <span>#${gpu.index} ${escapeHtml(gpu.name)}</span>
+          </label>
+        `;
+      }).join("") || `<div class="hint">${state.selectedHost ? "这台服务器没有读取到显卡。" : "请先选择服务器。"}</div>`;
+    }
+
+    async function loadRemoteCondaEnvs() {
+      const select = $("condaSelect");
+      select.innerHTML = `<option value="">不使用 Conda 环境</option>`;
+      if (!state.selectedHost) return;
+      select.innerHTML = `<option value="">正在读取 ${escapeHtml(state.selectedHost)} 的 Conda 环境...</option>`;
+      try {
+        const data = await api(`/api/remote_conda_envs?host=${encodeURIComponent(state.selectedHost)}`);
+        select.innerHTML = `<option value="">不使用 Conda 环境</option>`;
+        const envs = data.envs || [];
+        select.innerHTML += envs.length
+          ? envs.map((env) => `<option value="${escapeHtml(env)}">${escapeHtml(env)}</option>`).join("")
+          : `<option value="" disabled>没有读取到 Conda 环境</option>`;
+      } catch (err) {
+        select.innerHTML = `<option value="">不使用 Conda 环境</option><option value="">无法读取远端 Conda 环境</option>`;
+      }
+    }
+
+    function renderTasks() {
+      $("taskRows").innerHTML = sortedTasks().map((task) => {
+        const statusClass = task.status === "running" ? "status-running" : task.status === "failed_to_start" ? "status-failed" : "status-stopped";
+        return `
+          <tr>
+            <td>${escapeHtml(task.name || "")}</td>
+            <td>${escapeHtml(task.host || "")}</td>
+            <td>${escapeHtml((task.gpus || []).join(","))}</td>
+            <td class="${statusClass}">${escapeHtml(task.status || "")}</td>
+            <td>${fmtTime(task.started_at)}</td>
+            <td>${fmtDuration(task)}</td>
+            <td>
+              <div class="task-actions">
+                <button class="btn small" data-attach="${escapeHtml(task.id)}">打开tmux</button>
+                <button class="btn small" data-stop="${escapeHtml(task.id)}">终止程序</button>
+                <button class="btn small" data-delete="${escapeHtml(task.id)}">删除tmux</button>
+                <button class="btn small" data-remove="${escapeHtml(task.id)}">删除任务</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("") || `<tr><td colspan="7">还没有任务。</td></tr>`;
+      renderSortHeaders();
+    }
+
+    function enableColumnResize(table) {
+      const cols = [...table.querySelectorAll("col")];
+      const minWidths = [150, 82, 76, 86, 116, 84, 154];
+      const lockColumnWidths = () => {
+        const tableWidth = table.getBoundingClientRect().width;
+        table.style.width = `${tableWidth}px`;
+        table.querySelectorAll("thead th").forEach((th, index) => {
+          cols[index].style.width = `${Math.max(minWidths[index] || 72, th.getBoundingClientRect().width)}px`;
+        });
+      };
+      lockColumnWidths();
+      table.querySelectorAll("thead th").forEach((th, index) => {
+        if (index >= cols.length - 1) return;
+        if (th.querySelector(".resize-handle")) return;
+        const handle = document.createElement("span");
+        handle.className = "resize-handle";
+        th.appendChild(handle);
+        handle.addEventListener("click", (event) => event.stopPropagation());
+        handle.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const col = cols[index];
+          const nextCol = cols[index + 1];
+          const startX = event.clientX;
+          const startWidth = parseFloat(col.style.width) || col.getBoundingClientRect().width || th.getBoundingClientRect().width;
+          const startNextWidth = parseFloat(nextCol.style.width) || nextCol.getBoundingClientRect().width;
+          const minCurrent = minWidths[index] || 72;
+          const minNext = minWidths[index + 1] || 72;
+          const onMove = (moveEvent) => {
+            const rawDelta = moveEvent.clientX - startX;
+            const delta = Math.max(minCurrent - startWidth, Math.min(startNextWidth - minNext, rawDelta));
+            col.style.width = `${startWidth + delta}px`;
+            nextCol.style.width = `${startNextWidth - delta}px`;
+          };
+          const onUp = () => {
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+          };
+          document.addEventListener("mousemove", onMove);
+          document.addEventListener("mouseup", onUp);
+        });
+      });
+    }
+
+    function saveLastTaskForm() {
+      const payload = {
+        host: state.selectedHost,
+        gpus: [...state.selectedGpus],
+        conda_env: $("condaSelect").value,
+        name: $("taskName").value,
+        script_path: $("scriptPath").value,
+      };
+      localStorage.setItem("gpuTaskLastForm", JSON.stringify(payload));
+    }
+
+    function loadLastTaskForm() {
+      try {
+        return JSON.parse(localStorage.getItem("gpuTaskLastForm") || "{}");
+      } catch {
+        return {};
+      }
+    }
+
+    function applyLastTaskForm(partial = {}) {
+      const last = { ...loadLastTaskForm(), ...partial };
+      const hosts = state.config?.hosts || [];
+      if (last.host && hosts.some((host) => host.alias === last.host)) state.selectedHost = last.host;
+      if (Array.isArray(last.gpus)) state.selectedGpus = new Set(last.gpus.map(String));
+      if (typeof last.name === "string") $("taskName").value = last.name;
+      if (typeof last.script_path === "string" && last.script_path) $("scriptPath").value = last.script_path;
+      renderServers();
+      renderGpus();
+      return last;
+    }
+
+    async function loadConfig() {
+      state.config = await api("/api/config");
+      $("configText").value = state.config.config_text || "";
+      renderServers();
+      if (!state.config.configured) openConfigModal();
+    }
+
+    async function loadStatus(force = false) {
+      $("gpuChoices").innerHTML = `<div class="hint">正在读取 ${escapeHtml(state.selectedHost || "服务器")} 的显卡...</div>`;
+      try {
+        const hostParam = state.selectedHost ? `&host=${encodeURIComponent(state.selectedHost)}` : "";
+        state.status = await api(force ? `/api/status?refresh=1${hostParam}` : "/api/status");
+        (state.status?.results || []).forEach((item) => {
+          state.gpuCache[item.alias] = item;
+        });
+        renderGpus();
+      } catch (err) {
+        $("gpuChoices").innerHTML = `<div class="hint">GPU 读取失败：${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    async function loadSelectedServerGpus(force = false) {
+      if (!state.selectedHost) {
+        renderGpus();
+        return;
+      }
+      if (!force && state.gpuCache[state.selectedHost]) {
+        renderGpus();
+        return;
+      }
+      await loadStatus(true);
+    }
+
+    async function loadTasks(refresh = false) {
+      const data = await api(refresh ? "/api/tasks?refresh=1" : "/api/tasks");
+      state.tasks = data.tasks || [];
+      renderTasks();
+    }
+
+    async function saveConfig() {
+      try {
+        const payload = await api("/api/config", {
+          method: "POST",
+          body: JSON.stringify({ config_text: $("configText").value }),
+        });
+        state.config = { ...(state.config || {}), configured: true, hosts: payload.hosts, config_text: $("configText").value };
+        $("configModal").classList.add("hidden");
+        message("configMessage", "已保存。", "good");
+        renderServers();
+      } catch (err) {
+        message("configMessage", err.message, "error");
+      }
+    }
+
+    async function startTask() {
+      message("taskMessage", "正在启动...");
+      try {
+        saveLastTaskForm();
+        await api("/api/tasks", {
+          method: "POST",
+          body: JSON.stringify({
+            name: $("taskName").value,
+            host: state.selectedHost,
+            gpus: [...state.selectedGpus],
+            conda_env: $("condaSelect").value,
+            script_path: $("scriptPath").value,
+          }),
+        });
+        message("taskMessage", "任务已启动。", "good");
+        $("taskModal").classList.add("hidden");
+        await loadTasks(false);
+      } catch (err) {
+        message("taskMessage", err.message, "error");
+      }
+    }
+
+    async function openTaskModal() {
+      message("taskMessage", "");
+      $("taskModal").classList.remove("hidden");
+      const last = applyLastTaskForm();
+      renderServers();
+      await loadSelectedServerGpus(false);
+      await loadRemoteCondaEnvs();
+      if (typeof last.conda_env === "string") $("condaSelect").value = last.conda_env;
+    }
+
+    function openConfigModal() {
+      $("configModal").classList.remove("hidden");
+    }
+
+    function showAttach(id) {
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task) return;
+      const command = task.tmux_command || `tmux attach -t ${task.session || ""}`;
+      const line = $("attachLine");
+      line.classList.remove("hidden");
+      line.textContent = `已复制：${command}`;
+      navigator.clipboard?.writeText(command).catch(() => {
+        line.textContent = command;
+      });
+    }
+
+    async function deleteTask(id) {
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task) return;
+      const ok = window.confirm(`确定要删除远端 tmux session “${task.session}” 吗？\n这会停止该任务。`);
+      if (!ok) return;
+      try {
+        await api("/api/tasks/delete", {
+          method: "POST",
+          body: JSON.stringify({ id }),
+        });
+        await loadTasks();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function stopTask(id) {
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task) return;
+      const ok = window.confirm(`确定要终止任务“${task.name}”当前正在运行的程序吗？\n这只会向 tmux 发送 Ctrl-C，不会删除 tmux session。`);
+      if (!ok) return;
+      try {
+        await api("/api/tasks/stop", {
+          method: "POST",
+          body: JSON.stringify({ id }),
+        });
+        await loadTasks();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function removeTask(id) {
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task) return;
+      const ok = window.confirm(`确定要删除任务“${task.name}”吗？\n会先删除对应 tmux session，然后从任务列表中移除这条记录。`);
+      if (!ok) return;
+      try {
+        await api("/api/tasks/remove", {
+          method: "POST",
+          body: JSON.stringify({ id }),
+        });
+        await loadTasks(false);
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    $("serverSelect").addEventListener("change", async (event) => {
+      state.selectedHost = event.target.value;
+      state.selectedGpus.clear();
+      renderServers();
+      await loadSelectedServerGpus(true);
+      await loadRemoteCondaEnvs();
+      saveLastTaskForm();
+    });
+    $("gpuChoices").addEventListener("change", () => {
+      state.selectedGpus = new Set([...$("gpuChoices").querySelectorAll("input:checked")].map((input) => input.value));
+      saveLastTaskForm();
+    });
+    $("condaSelect").addEventListener("change", saveLastTaskForm);
+    $("taskName").addEventListener("input", saveLastTaskForm);
+    $("scriptPath").addEventListener("input", saveLastTaskForm);
+    $("addTaskBtn").addEventListener("click", openTaskModal);
+    $("startTaskBtn").addEventListener("click", startTask);
+    $("cancelTaskBtn").addEventListener("click", () => $("taskModal").classList.add("hidden"));
+    $("refreshBtn").addEventListener("click", (event) => {
+      withButtonLoading(event.currentTarget, async () => {
+        await loadStatus(true);
+        await loadTasks(true);
+      });
+    });
+    $("editConfigBtn").addEventListener("click", openConfigModal);
+    $("cancelConfigBtn").addEventListener("click", () => $("configModal").classList.add("hidden"));
+    $("saveConfigBtn").addEventListener("click", saveConfig);
+    $("taskModal").addEventListener("click", (event) => {
+      if (event.target.id === "taskModal") $("taskModal").classList.add("hidden");
+    });
+    $("configModal").addEventListener("click", (event) => {
+      if (event.target.id === "configModal" && state.config?.configured) $("configModal").classList.add("hidden");
+    });
+    const taskTable = document.querySelector("table");
+    enableColumnResize(taskTable);
+    document.querySelector("thead").addEventListener("click", (event) => {
+      const th = event.target.closest("[data-sort]");
+      if (!th) return;
+      if (state.sortKey === th.dataset.sort) {
+        state.sortDirection = state.sortDirection === "asc" ? "desc" : "asc";
+      } else {
+        state.sortKey = th.dataset.sort;
+        state.sortDirection = "asc";
+      }
+      renderTasks();
+    });
+    $("taskRows").addEventListener("click", (event) => {
+      const attach = event.target.closest("[data-attach]");
+      const stop = event.target.closest("[data-stop]");
+      const del = event.target.closest("[data-delete]");
+      const remove = event.target.closest("[data-remove]");
+      if (attach) showAttach(attach.dataset.attach);
+      if (stop) stopTask(stop.dataset.stop);
+      if (del) deleteTask(del.dataset.delete);
+      if (remove) removeTask(remove.dataset.remove);
+    });
+    window.addEventListener("pagehide", shutdownServer);
+    window.addEventListener("beforeunload", shutdownServer);
+    window.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      $("taskModal").classList.add("hidden");
+      if (state.config?.configured) $("configModal").classList.add("hidden");
+    });
+
+    (async function boot() {
+      sendHeartbeat();
+      state.heartbeatTimer = setInterval(sendHeartbeat, 2000);
+      await loadConfig();
+      applyLastTaskForm();
+      await loadTasks(false);
+    })();
+  </script>
+</body>
+</html>
