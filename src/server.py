@@ -422,8 +422,22 @@ async def fetch_process_users(host: HostConfig, pids: list[str]) -> dict[str, st
 async def refresh_task_status(task: dict[str, Any]) -> None:
     if task.get("status") != "running":
         return
-    code, _, _ = await run_ssh(str(task.get("host", "")), f"tmux has-session -t {shlex.quote(str(task.get('session', '')))}", timeout=CONNECT_TIMEOUT)
-    task["status"] = "running" if code == 0 else "stopped"
+    host = str(task.get("host", ""))
+    session = str(task.get("session", ""))
+    done_file = str(task.get("done_file", ""))
+    if done_file:
+        done_code, stdout, _ = await run_ssh(host, f"cat {shlex.quote(done_file)} 2>/dev/null", timeout=CONNECT_TIMEOUT)
+        if done_code == 0:
+            task["status"] = "finished"
+            task["exit_code"] = stdout.strip().splitlines()[-1] if stdout.strip() else "0"
+            task["updated_at"] = time.time()
+            return
+    code, _, _ = await run_ssh(host, f"tmux has-session -t {shlex.quote(session)}", timeout=CONNECT_TIMEOUT)
+    if code != 0:
+        task["status"] = "stopped"
+    else:
+        capture_code, stdout, _ = await run_ssh(host, f"tmux capture-pane -pt {shlex.quote(session)} -S -80", timeout=CONNECT_TIMEOUT)
+        task["status"] = "finished" if capture_code == 0 and "[autotask] 程序已结束" in stdout else "running"
     task["updated_at"] = time.time()
 
 
@@ -456,6 +470,7 @@ async def start_remote_task(payload: dict[str, Any]) -> dict[str, Any]:
 
     session = make_unique_session(sanitize_session_name(name))
     gpu_env = ",".join(gpus)
+    done_file = f"/tmp/autotask4macos_{session}_{int(time.time())}.done"
     env_prefix = f"export CUDA_VISIBLE_DEVICES={shlex.quote(gpu_env)}; " if gpu_env else ""
     script_arg = remote_script_arg(script_path)
     run_script = (
@@ -464,8 +479,10 @@ async def start_remote_task(payload: dict[str, Any]) -> dict[str, Any]:
         else f"bash {script_arg}"
     )
     inner = (
+        f"rm -f {shlex.quote(done_file)}; "
         f"{env_prefix}{run_script}; "
         "rc=$?; "
+        f"printf '%s\\n' \"$rc\" > {shlex.quote(done_file)}; "
         "printf '\\n[autotask] 程序已结束，退出码: %s\\n' \"$rc\"; "
         "exec bash"
     )
@@ -483,6 +500,8 @@ async def start_remote_task(payload: dict[str, Any]) -> dict[str, Any]:
         "status": "running" if code == 0 else "failed_to_start",
         "started_at": now,
         "updated_at": now,
+        "done_file": done_file,
+        "exit_code": "",
         "attach_command": f"ssh -t {host} {shlex.quote('tmux attach -t ' + session)}",
         "tmux_command": f"tmux attach -t {shlex.quote(session)}",
         "last_error": (stderr.strip() or stdout.strip()) if code != 0 else "",

@@ -130,3 +130,9 @@
 - 将任务页面文件改名为 `src/runner.html`。
 - 后端页面和应用模式改为 `runner`，页面地址改为 `/runner`。
 - Runner 日志改为 `runner.log`。
+
+## 2026-04-16 22:45 - Runner 完成状态识别
+
+- 新任务启动时写入远端完成标记文件，记录退出码。
+- 刷新任务状态时优先读取完成标记，避免 tmux 留存导致一直显示 running。
+- 旧任务会兼容检测 tmux pane 中的完成提示并标记为 finished。

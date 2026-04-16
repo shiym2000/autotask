@@ -465,12 +465,15 @@
     function renderTasks() {
       $("taskRows").innerHTML = sortedTasks().map((task) => {
         const statusClass = task.status === "running" ? "status-running" : task.status === "failed_to_start" ? "status-failed" : "status-stopped";
+        const statusText = task.status === "finished" && task.exit_code !== undefined && task.exit_code !== ""
+          ? `finished (${escapeHtml(task.exit_code)})`
+          : escapeHtml(task.status || "");
         return `
           <tr>
             <td>${escapeHtml(task.name || "")}</td>
             <td>${escapeHtml(task.host || "")}</td>
             <td>${escapeHtml((task.gpus || []).join(","))}</td>
-            <td class="${statusClass}">${escapeHtml(task.status || "")}</td>
+            <td class="${statusClass}">${statusText}</td>
             <td>${fmtTime(task.started_at)}</td>
             <td>${fmtDuration(task)}</td>
             <td>
