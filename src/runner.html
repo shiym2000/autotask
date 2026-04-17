@@ -469,20 +469,27 @@
 
     function renderTasks() {
       $("taskRows").innerHTML = sortedTasks().map((task) => {
+        const exitCode = String(task.exit_code || "").trim();
         const normalizedStatus = task.status === "running"
           ? "running"
           : ["completed", "finished"].includes(task.status)
             ? "completed"
             : "interrupted";
         const statusClass = `status-${normalizedStatus}`;
-        const statusText = normalizedStatus === "running" ? "Running" : normalizedStatus === "completed" ? "Completed" : "Interrupted";
+        const statusText = normalizedStatus === "running"
+          ? "Running"
+          : normalizedStatus === "completed"
+            ? "Completed"
+            : exitCode && exitCode !== "0"
+              ? `Interrupted (${exitCode})`
+              : "Interrupted";
         return `
           <tr>
             <td>${escapeHtml(task.name || "")}</td>
             <td>${escapeHtml(task.host || "")}</td>
             <td>${escapeHtml((task.gpus || []).join(","))}</td>
             <td>${escapeHtml(task.conda_env || "不使用")}</td>
-            <td class="${statusClass}">${statusText}</td>
+            <td class="${statusClass}" title="${escapeHtml(task.last_error || "")}">${escapeHtml(statusText)}</td>
             <td>${fmtTime(task.started_at)}</td>
             <td>${fmtDuration(task)}</td>
             <td>

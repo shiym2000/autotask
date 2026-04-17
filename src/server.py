@@ -181,6 +181,11 @@ def load_tasks() -> None:
         TASKS = []
         return
     TASKS = data if isinstance(data, list) else []
+    changed = False
+    for task in TASKS:
+        changed = normalize_task_exit_status(task) or changed
+    if changed:
+        save_tasks()
 
 
 def save_tasks() -> None:
@@ -263,16 +268,35 @@ def remote_script_arg(path: str) -> str:
 
 
 def public_task(task: dict[str, Any]) -> dict[str, Any]:
-    return dict(task)
+    visible_task = dict(task)
+    normalize_task_exit_status(visible_task)
+    return visible_task
 
 
 def is_completed_task(task: dict[str, Any]) -> bool:
+    normalize_task_exit_status(task)
     return task.get("status") in {"completed", "finished"}
 
 
 def mark_task_ended(task: dict[str, Any]) -> None:
     if not task.get("ended_at"):
         task["ended_at"] = time.time()
+
+
+def exit_code_is_success(exit_code: Any) -> bool:
+    return str(exit_code).strip() in {"", "0"}
+
+
+def normalize_task_exit_status(task: dict[str, Any]) -> bool:
+    exit_code = str(task.get("exit_code", "")).strip()
+    if not exit_code or exit_code == "0":
+        return False
+    if task.get("status") not in {"completed", "finished"}:
+        return False
+    task["status"] = "interrupted"
+    if not task.get("last_error"):
+        task["last_error"] = f"远端任务退出码: {exit_code}"
+    return True
 
 
 def read_done_file(stdout: str) -> tuple[str, float | None]:
@@ -483,10 +507,12 @@ async def refresh_task_status(task: dict[str, Any]) -> None:
         done_code, stdout, _ = await run_ssh(host, f"cat {shlex.quote(done_file)} 2>/dev/null", timeout=CONNECT_TIMEOUT)
         if done_code == 0:
             exit_code, ended_at = read_done_file(stdout)
-            task["status"] = "completed"
+            task["status"] = "completed" if exit_code_is_success(exit_code) else "interrupted"
             task["exit_code"] = exit_code
             task["ended_at"] = ended_at or time.time()
             task["updated_at"] = time.time()
+            if task["status"] == "interrupted" and not task.get("last_error"):
+                task["last_error"] = f"远端任务退出码: {exit_code}"
             return
     code, stdout, stderr = await run_ssh(host, f"tmux has-session -t {shlex.quote(session)}", timeout=CONNECT_TIMEOUT)
     if code != 0:
@@ -1081,6 +1107,14 @@ def self_test() -> int:
     assert gpus[0]["processes"][0]["user"] == "alice"
     assert sanitize_session_name(" train llama/0420 ") == "train_llama_0420"
     assert sanitize_session_name("!!!") == "task"
+    assert read_done_file("1\n1776402651\n") == ("1", 1776402651.0)
+    task = {"status": "completed", "exit_code": "1", "last_error": ""}
+    assert normalize_task_exit_status(task)
+    assert task["status"] == "interrupted"
+    assert task["last_error"] == "远端任务退出码: 1"
+    task = {"status": "completed", "exit_code": "0", "last_error": ""}
+    assert not normalize_task_exit_status(task)
+    assert task["status"] == "completed"
     print("self-test passed")
     return 0
 
