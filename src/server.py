@@ -35,6 +35,7 @@ RUNNER_INDEX_PATH = APP_DIR / "runner.html"
 MONITOR_LOG_PATH = DATA_DIR / "monitor.log"
 RUNNER_LOG_PATH = DATA_DIR / "runner.log"
 TASKS_PATH = DATA_DIR / "tasks.json"
+MONITOR_STATUS_PATH = DATA_DIR / "monitor_status.json"
 REFRESH_INTERVAL = 2
 SSH_CONCURRENCY_LIMIT = 1
 SSH_TIMEOUT = 12
@@ -190,6 +191,35 @@ def save_tasks() -> None:
         log(f"Failed to save tasks: {exc}")
 
 
+def load_status_cache() -> None:
+    ensure_data_files()
+    if not MONITOR_STATUS_PATH.exists():
+        return
+    try:
+        cached = json.loads(MONITOR_STATUS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(cached, dict):
+        return
+    for key in ("updated_at", "hosts", "results", "config_error"):
+        if key in cached:
+            STATE[key] = cached[key]
+
+
+def save_status_cache() -> None:
+    try:
+        ensure_data_files()
+        payload = {
+            "updated_at": STATE.get("updated_at"),
+            "hosts": STATE.get("hosts", []),
+            "results": STATE.get("results", []),
+            "config_error": STATE.get("config_error"),
+        }
+        MONITOR_STATUS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError as exc:
+        log(f"Failed to save monitor status cache: {exc}")
+
+
 def sanitize_session_name(name: str) -> str:
     session = re.sub(r"[^A-Za-z0-9_.-]+", "_", name.strip())
     session = session.strip("._-")
@@ -237,7 +267,7 @@ def public_task(task: dict[str, Any]) -> dict[str, Any]:
 
 
 def is_completed_task(task: dict[str, Any]) -> bool:
-    return task.get("status") in {"completed", "finished"} or str(task.get("exit_code", "")) == "0"
+    return task.get("status") in {"completed", "finished"}
 
 
 def mark_task_ended(task: dict[str, Any]) -> None:
@@ -320,12 +350,15 @@ async def refresh_status_once(host_alias: str | None = None) -> None:
     selected_hosts = [host for host in hosts if not host_alias or host.alias == host_alias]
     fresh_results = await asyncio.gather(*(collect_host(host) for host in selected_hosts)) if selected_hosts else []
     if host_alias:
-        fresh_aliases = {item.get("alias") for item in fresh_results}
-        kept_results = [item for item in STATE["results"] if item.get("alias") not in fresh_aliases and item.get("alias") != host_alias]
-        STATE["results"] = kept_results + fresh_results
+        by_alias = {item.get("alias"): item for item in STATE["results"]}
+        for item in fresh_results:
+            by_alias[item.get("alias")] = item
+        configured_aliases = [host.alias for host in hosts]
+        STATE["results"] = [by_alias[alias] for alias in configured_aliases if alias in by_alias]
     else:
         STATE["results"] = fresh_results
     STATE["updated_at"] = time.time()
+    save_status_cache()
 
 
 def load_hosts() -> tuple[list[HostConfig], str | None]:
@@ -442,7 +475,7 @@ async def fetch_process_users(host: HostConfig, pids: list[str]) -> dict[str, st
 
 
 async def refresh_task_status(task: dict[str, Any]) -> None:
-    if task.get("status") not in {"running", "stopped", "interrupted"}:
+    if task.get("status") != "running":
         return
     host = str(task.get("host", ""))
     session = str(task.get("session", ""))
@@ -488,6 +521,8 @@ async def start_remote_task(payload: dict[str, Any]) -> dict[str, Any]:
     name = str(payload.get("name", "")).strip()
     if not name:
         raise ValueError("请输入任务名")
+    if any(str(task.get("name", "")).strip() == name for task in TASKS):
+        raise ValueError("任务名已存在，请换一个任务名")
 
     gpus = [str(item).strip() for item in payload.get("gpus", []) if str(item).strip() != ""]
     if not all(gpu.isdigit() for gpu in gpus):
@@ -1055,6 +1090,8 @@ async def amain() -> int:
     default_port = RUNNER_DEFAULT_PORT if APP_MODE == "runner" else DEFAULT_PORT
     port = find_free_port(args.port or default_port)
     load_tasks()
+    if APP_MODE == "monitor":
+        load_status_cache()
     loop = asyncio.get_running_loop()
     SSH_SEMAPHORE = threading.BoundedSemaphore(SSH_CONCURRENCY_LIMIT)
     loop.create_task(heartbeat_loop())

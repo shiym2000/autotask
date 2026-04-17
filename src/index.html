@@ -712,8 +712,10 @@
         const status = await api(force ? "/api/status?refresh=1" : "/api/status");
         renderSummary(status.results || [], status.updated_at);
         renderServers(status.results || []);
+        return status;
       } catch (err) {
         $("servers").innerHTML = `<section class="server"><div class="error-box">后台服务没有响应：${escapeHtml(err.message)}</div></section>`;
+        return null;
       }
     }
 
@@ -825,7 +827,12 @@
       sendHeartbeat();
       state.heartbeatTimer = setInterval(sendHeartbeat, 2000);
       await loadConfig();
-      await refreshStatus(true);
+      const cachedStatus = await refreshStatus(false);
+      if ((cachedStatus?.results || []).length) {
+        refreshStatus(true);
+      } else {
+        await refreshStatus(true);
+      }
     })();
   </script>
 </body>

@@ -185,3 +185,9 @@
 - Runner 任务表在显卡号后新增 Conda 环境列。
 - Monitor 单服务器刷新按本地显示顺序重排，避免刷新项移动到底部。
 - Monitor 服务器卡片支持拖拽排序，并用 localStorage 持久化。
+
+## 2026-04-17 01:15 - Monitor 缓存与 Runner 状态保护
+
+- Monitor 保存上次采集结果，重新打开时先显示缓存，再后台刷新。
+- Runner 添加任务时拒绝与已有任务重名的新任务。
+- Runner 刷新任务状态时不再把 Interrupted 任务重新判定为 Completed。
