@@ -469,7 +469,6 @@
 
     function renderTasks() {
       $("taskRows").innerHTML = sortedTasks().map((task) => {
-        const exitCode = String(task.exit_code || "").trim();
         const normalizedStatus = task.status === "running"
           ? "running"
           : ["completed", "finished"].includes(task.status)
@@ -480,9 +479,7 @@
           ? "Running"
           : normalizedStatus === "completed"
             ? "Completed"
-            : exitCode && exitCode !== "0"
-              ? `Interrupted (${exitCode})`
-              : "Interrupted";
+            : "Interrupted";
         return `
           <tr>
             <td>${escapeHtml(task.name || "")}</td>

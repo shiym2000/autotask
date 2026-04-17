@@ -299,9 +299,9 @@ def normalize_task_exit_status(task: dict[str, Any]) -> bool:
     return True
 
 
-def read_done_file(stdout: str) -> tuple[str, float | None]:
+def read_done_file(stdout: str) -> tuple[str | None, float | None]:
     lines = [line.strip() for line in stdout.splitlines() if line.strip()]
-    exit_code = lines[0] if lines else "0"
+    exit_code = lines[0] if lines else None
     ended_at = None
     if len(lines) > 1:
         try:
@@ -309,6 +309,20 @@ def read_done_file(stdout: str) -> tuple[str, float | None]:
         except ValueError:
             ended_at = None
     return exit_code, ended_at
+
+
+def parse_autotask_exit_code(output: str) -> str | None:
+    matches = re.findall(r"\[autotask\].*?退出码:\s*([0-9]+)", output)
+    return matches[-1] if matches else None
+
+
+def apply_task_exit_code(task: dict[str, Any], exit_code: str, ended_at: float | None = None) -> None:
+    task["status"] = "completed" if exit_code_is_success(exit_code) else "interrupted"
+    task["exit_code"] = exit_code
+    task["ended_at"] = ended_at or task.get("ended_at") or time.time()
+    task["updated_at"] = time.time()
+    if task["status"] == "interrupted" and not task.get("last_error"):
+        task["last_error"] = f"远端任务退出码: {exit_code}"
 
 
 async def run_ssh_command(command: list[str], timeout: int = SSH_TIMEOUT) -> tuple[int, str, str]:
@@ -498,7 +512,7 @@ async def fetch_process_users(host: HostConfig, pids: list[str]) -> dict[str, st
 
 
 async def refresh_task_status(task: dict[str, Any]) -> None:
-    if task.get("status") != "running":
+    if task.get("status") not in {"running", "completed", "finished"}:
         return
     host = str(task.get("host", ""))
     session = str(task.get("session", ""))
@@ -507,24 +521,35 @@ async def refresh_task_status(task: dict[str, Any]) -> None:
         done_code, stdout, _ = await run_ssh(host, f"cat {shlex.quote(done_file)} 2>/dev/null", timeout=CONNECT_TIMEOUT)
         if done_code == 0:
             exit_code, ended_at = read_done_file(stdout)
-            task["status"] = "completed" if exit_code_is_success(exit_code) else "interrupted"
-            task["exit_code"] = exit_code
-            task["ended_at"] = ended_at or time.time()
-            task["updated_at"] = time.time()
-            if task["status"] == "interrupted" and not task.get("last_error"):
-                task["last_error"] = f"远端任务退出码: {exit_code}"
-            return
+            if exit_code is not None:
+                apply_task_exit_code(task, exit_code, ended_at)
+                return
     code, stdout, stderr = await run_ssh(host, f"tmux has-session -t {shlex.quote(session)}", timeout=CONNECT_TIMEOUT)
     if code != 0:
         message = f"{stdout}\n{stderr}".lower()
         if "can't find session" in message or "no server running" in message:
-            task["status"] = "interrupted"
-            mark_task_ended(task)
-            task["updated_at"] = time.time()
+            if task.get("status") == "running":
+                task["status"] = "interrupted"
+                mark_task_ended(task)
+                task["updated_at"] = time.time()
         else:
             task["last_error"] = (stderr.strip() or stdout.strip() or "任务状态刷新失败")
         return
-    else:
+
+    output_code, output, output_error = await run_ssh(
+        host,
+        f"tmux capture-pane -pt {shlex.quote(session)} -S -80",
+        timeout=CONNECT_TIMEOUT,
+    )
+    if output_code == 0:
+        exit_code = parse_autotask_exit_code(output)
+        if exit_code is not None:
+            apply_task_exit_code(task, exit_code)
+            return
+    elif output_error.strip() or output.strip():
+        task["last_error"] = output_error.strip() or output.strip()
+
+    if task.get("status") == "running":
         task["status"] = "running"
     task["updated_at"] = time.time()
 
@@ -1108,6 +1133,9 @@ def self_test() -> int:
     assert sanitize_session_name(" train llama/0420 ") == "train_llama_0420"
     assert sanitize_session_name("!!!") == "task"
     assert read_done_file("1\n1776402651\n") == ("1", 1776402651.0)
+    assert read_done_file("") == (None, None)
+    assert parse_autotask_exit_code("[autotask] 程序已结束，退出码: 1") == "1"
+    assert parse_autotask_exit_code("no marker") is None
     task = {"status": "completed", "exit_code": "1", "last_error": ""}
     assert normalize_task_exit_status(task)
     assert task["status"] == "interrupted"
