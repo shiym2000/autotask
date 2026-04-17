@@ -4,33 +4,33 @@ setlocal EnableExtensions
 set "ROOT_DIR=%~dp0"
 set "SRC_DIR=%ROOT_DIR%src"
 set "DATA_DIR=%ROOT_DIR%data"
-set "LOG_FILE=%DATA_DIR%\monitor.log"
+set "LOG_FILE=%DATA_DIR%\runner.log"
 set "ENV_NAME=autotask"
 
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
 cd /d "%ROOT_DIR%" || exit /b 1
 
-echo AutoTask Monitor launcher
-echo Keep this window open while Monitor is running.
+echo AutoTask Runner launcher
+echo Keep this window open while Runner is running. Closing it will not stop remote tmux tasks.
 echo.
 
 call :find_conda
 if not defined CONDA_BIN (
-  echo Conda was not found. Install Anaconda or Miniconda, then double-click start_monitor_windows.bat again.
+  echo Conda was not found. Install Anaconda or Miniconda, then double-click windows_start_runner.bat again.
   pause
   exit /b 1
 )
 
 call "%CONDA_BIN%" run -n "%ENV_NAME%" python --version >nul 2>&1
 if errorlevel 1 (
-  echo AutoTask is not set up yet. Double-click setup_windows.bat first.
+  echo AutoTask is not set up yet. Double-click windows_setup.bat first.
   pause
   exit /b 1
 )
 
-echo Starting AutoTask Monitor. The browser will open automatically.
-echo Starting AutoTask Monitor.>>"%LOG_FILE%"
-call "%CONDA_BIN%" run -n "%ENV_NAME%" python "%SRC_DIR%\server.py" --open --page monitor --app monitor --port 8765
+echo Starting AutoTask Runner. The browser will open automatically.
+echo Starting AutoTask Runner.>>"%LOG_FILE%"
+call "%CONDA_BIN%" run -n "%ENV_NAME%" python "%SRC_DIR%\server.py" --open --page runner --app runner --port 8775
 exit /b %errorlevel%
 
 :find_conda

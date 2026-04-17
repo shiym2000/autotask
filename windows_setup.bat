@@ -16,8 +16,8 @@ echo.
 
 call :find_conda
 if not defined CONDA_BIN (
-  echo Conda was not found. Install Anaconda or Miniconda, then double-click setup_windows.bat again.
-  echo Conda was not found. Install Anaconda or Miniconda, then double-click setup_windows.bat again.>>"%LOG_FILE%"
+  echo Conda was not found. Install Anaconda or Miniconda, then double-click windows_setup.bat again.
+  echo Conda was not found. Install Anaconda or Miniconda, then double-click windows_setup.bat again.>>"%LOG_FILE%"
   pause
   exit /b 1
 )
@@ -53,7 +53,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo AutoTask is ready. Use start_monitor_windows.bat or start_runner_windows.bat next.
+echo AutoTask is ready. Use windows_start_monitor.bat or windows_start_runner.bat next.
 echo AutoTask is ready.>>"%LOG_FILE%"
 pause
 exit /b 0

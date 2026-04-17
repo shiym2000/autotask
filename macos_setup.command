@@ -59,15 +59,15 @@ find_conda() {
 
 clear
 printf 'AutoTask 首次环境配置\n'
-printf '请不要关闭这个窗口。看到“环境准备完成”后，以后可以双击 start_monitor_macos.command 或 start_runner_macos.command。\n'
+printf '请不要关闭这个窗口。看到“环境准备完成”后，以后可以双击 macos_start_monitor.command 或 macos_start_runner.command。\n'
 
 configure_proxy
 
 progress "1/4 查找 Conda"
 CONDA_BIN="$(find_conda || true)"
 if [ -z "$CONDA_BIN" ]; then
-  log "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 setup_macos.command。"
-  osascript -e 'display dialog "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 setup_macos.command。" buttons {"好"} default button "好"' >/dev/null 2>&1
+  log "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 macos_setup.command。"
+  osascript -e 'display dialog "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 macos_setup.command。" buttons {"好"} default button "好"' >/dev/null 2>&1
   exit 1
 fi
 log "使用 Conda: $CONDA_BIN"
@@ -115,8 +115,8 @@ if [ "${PIPESTATUS[0]}" -ne 0 ]; then
   exit 1
 fi
 
-log "AutoTask 环境准备完成。以后双击 start_monitor_macos.command 打开监控，双击 start_runner_macos.command 打开 Runner。"
-osascript -e 'display dialog "AutoTask 环境准备完成。以后双击 start_monitor_macos.command 打开监控，双击 start_runner_macos.command 打开 Runner。" buttons {"好"} default button "好"' >/dev/null 2>&1
+log "AutoTask 环境准备完成。以后双击 macos_start_monitor.command 打开监控，双击 macos_start_runner.command 打开 Runner。"
+osascript -e 'display dialog "AutoTask 环境准备完成。以后双击 macos_start_monitor.command 打开监控，双击 macos_start_runner.command 打开 Runner。" buttons {"好"} default button "好"' >/dev/null 2>&1
 if [ -t 0 ]; then
   printf '\n环境准备完成。按回车关闭这个窗口。'
   read -r _

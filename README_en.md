@@ -17,15 +17,15 @@ AutoTask does not store passwords or handle interactive password login. Set up S
 
 macOS:
 
-1. Double-click `setup_macos.command` for first-time setup.
-2. Double-click `start_monitor_macos.command` to open Monitor.
-3. Double-click `start_runner_macos.command` to open Runner.
+1. Double-click `macos_setup.command` for first-time setup.
+2. Double-click `macos_start_monitor.command` to open Monitor.
+3. Double-click `macos_start_runner.command` to open Runner.
 
 Windows:
 
-1. Double-click `setup_windows.bat` for first-time setup.
-2. Double-click `start_monitor_windows.bat` to open Monitor.
-3. Double-click `start_runner_windows.bat` to open Runner.
+1. Double-click `windows_setup.bat` for first-time setup.
+2. Double-click `windows_start_monitor.bat` to open Monitor.
+3. Double-click `windows_start_runner.bat` to open Runner.
 
 On first use, click **编辑服务器** and paste your SSH config, for example:
 

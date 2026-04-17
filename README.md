@@ -17,15 +17,15 @@ AutoTask 不保存密码，也不处理交互式密码登录；请先配置好 S
 
 macOS：
 
-1. 双击 `setup_macos.command` 完成首次环境配置。
-2. 双击 `start_monitor_macos.command` 打开 Monitor。
-3. 双击 `start_runner_macos.command` 打开 Runner。
+1. 双击 `macos_setup.command` 完成首次环境配置。
+2. 双击 `macos_start_monitor.command` 打开 Monitor。
+3. 双击 `macos_start_runner.command` 打开 Runner。
 
 Windows：
 
-1. 双击 `setup_windows.bat` 完成首次环境配置。
-2. 双击 `start_monitor_windows.bat` 打开 Monitor。
-3. 双击 `start_runner_windows.bat` 打开 Runner。
+1. 双击 `windows_setup.bat` 完成首次环境配置。
+2. 双击 `windows_start_monitor.bat` 打开 Monitor。
+3. 双击 `windows_start_runner.bat` 打开 Runner。
 
 首次打开网页时，点击 **编辑服务器**，粘贴你的 SSH config，例如：
 

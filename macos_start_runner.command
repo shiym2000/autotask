@@ -40,8 +40,8 @@ printf '这个窗口保持打开时，任务管理后台正在运行。关闭窗
 progress "1/3 查找 Conda"
 CONDA_BIN="$(find_conda || true)"
 if [ -z "$CONDA_BIN" ]; then
-  log "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 start_runner_macos.command。"
-  osascript -e 'display dialog "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 start_runner_macos.command。" buttons {"好"} default button "好"' >/dev/null 2>&1
+  log "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 macos_start_runner.command。"
+  osascript -e 'display dialog "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 macos_start_runner.command。" buttons {"好"} default button "好"' >/dev/null 2>&1
   if [ -t 0 ]; then
     printf '\n启动失败。按回车关闭这个窗口。'
     read -r _
@@ -53,9 +53,9 @@ log "使用 Conda: $CONDA_BIN"
 progress "2/3 检查首次配置"
 if ! "$CONDA_BIN" env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
   log "系统 Conda 环境还没有准备好：${ENV_NAME}"
-  osascript -e 'display dialog "AutoTask 还没有完成首次环境配置。请先双击 setup_macos.command，完成后再双击 start_runner_macos.command。" buttons {"好"} default button "好"' >/dev/null 2>&1
+  osascript -e 'display dialog "AutoTask 还没有完成首次环境配置。请先双击 macos_setup.command，完成后再双击 macos_start_runner.command。" buttons {"好"} default button "好"' >/dev/null 2>&1
   if [ -t 0 ]; then
-    printf '\n请先双击 setup_macos.command。按回车关闭这个窗口。'
+    printf '\n请先双击 macos_setup.command。按回车关闭这个窗口。'
     read -r _
   fi
   exit 1

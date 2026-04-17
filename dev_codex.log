@@ -195,6 +195,11 @@
 ## 2026-04-17 01:30 - Windows 启动器与项目名
 
 - 项目展示名改为 AutoTask，目录名和 GitHub 仓库名保持不变。
-- macOS 双击入口改为 `setup_macos.command`、`start_monitor_macos.command`、`start_runner_macos.command`。
-- 新增 Windows 双击入口 `setup_windows.bat`、`start_monitor_windows.bat`、`start_runner_windows.bat`。
+- macOS 双击入口改为 `macos_setup.command`、`macos_start_monitor.command`、`macos_start_runner.command`。
+- 新增 Windows 双击入口 `windows_setup.bat`、`windows_start_monitor.bat`、`windows_start_runner.bat`。
 - 后端打开本地命令行窗口逻辑增加 Windows PowerShell 分支。
+
+## 2026-04-17 01:45 - 平台入口脚本前缀化
+
+- 根目录双击脚本统一改为平台前缀命名：`macos_*` 和 `windows_*`。
+- README 与脚本内提示同步更新为新的入口文件名。
