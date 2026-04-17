@@ -170,6 +170,7 @@
     .modal p { color: var(--muted); line-height: 1.6; margin: 0 0 12px; }
     .servers { display: grid; gap: 16px; }
     .server { overflow: hidden; padding: 0; }
+    .server.dragging { opacity: .55; }
     .server-head {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -178,9 +179,10 @@
       padding: 12px 14px;
       border-bottom: 1px solid var(--line);
       background: linear-gradient(90deg, #ffffff 0%, #f0f7f4 100%);
-      cursor: pointer;
+      cursor: grab;
       list-style: none;
     }
+    .server.dragging .server-head { cursor: grabbing; }
     .server-head::-webkit-details-marker,
     .gpu-summary::-webkit-details-marker {
       display: none;
@@ -403,7 +405,11 @@
       editingConfig: false,
       highlightBusy: false,
       processSorts: {},
+      serverOrder: [],
+      draggingServer: null,
+      draggingElement: null,
     };
+    const SERVER_ORDER_KEY = "autotask4macos.monitor.serverOrder";
     const $ = (id) => document.getElementById(id);
     const fmt = (value, suffix = "") => value === null || value === undefined || value === "" ? "未知" : `${value}${suffix}`;
     const gb = (value) => value === null || value === undefined ? "未知" : `${(value / 1024).toFixed(1)} GB`;
@@ -499,6 +505,37 @@
       return { openServers, knownServers, openGpus };
     }
 
+    function loadServerOrder() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(SERVER_ORDER_KEY) || "[]");
+        return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string" && item) : [];
+      } catch (err) {
+        return [];
+      }
+    }
+
+    function saveServerOrder(order) {
+      state.serverOrder = [...order];
+      localStorage.setItem(SERVER_ORDER_KEY, JSON.stringify(state.serverOrder));
+    }
+
+    function orderedServers(results) {
+      const byAlias = new Map(results.map((server) => [server.alias, server]));
+      const order = state.serverOrder.length ? state.serverOrder : loadServerOrder();
+      const known = order.filter((alias) => byAlias.has(alias));
+      const added = results.map((server) => server.alias).filter((alias) => !known.includes(alias));
+      const merged = [...known, ...added];
+      if (merged.length) saveServerOrder(merged);
+      return merged.map((alias) => byAlias.get(alias)).filter(Boolean);
+    }
+
+    function persistServerOrderFromDom() {
+      const order = [...document.querySelectorAll("details.server[data-key]")]
+        .map((item) => item.dataset.key)
+        .filter(Boolean);
+      if (order.length) saveServerOrder(order);
+    }
+
     function isHighlightedProcess(proc, highlightUser) {
       return Boolean(highlightUser) && proc.user === highlightUser;
     }
@@ -580,7 +617,7 @@
         return;
       }
       const openState = collectOpenState();
-      $("servers").innerHTML = results.map((server) => {
+      $("servers").innerHTML = orderedServers(results).map((server) => {
         const serverKey = server.alias;
         const serverOpen = openState.knownServers.has(serverKey) ? openState.openServers.has(serverKey) : false;
         const openAttr = serverOpen ? " open" : "";
@@ -596,7 +633,7 @@
           ? `<div class="gpu-list">${(server.gpus || []).map((gpu) => renderGpu(gpu, server.alias, openState, highlightUser)).join("")}</div>`
           : `<div class="error-box">${escapeHtml(server.error || "无法采集这台服务器")}</div>`;
         return `
-          <details class="server${busyClass}" data-key="${escapeHtml(serverKey)}"${openAttr}>
+          <details class="server${busyClass}" data-key="${escapeHtml(serverKey)}" draggable="true"${openAttr}>
             <summary class="server-head">
               <div>
                 <div class="server-title"><h2>${escapeHtml(server.alias)}</h2>${status}</div>
@@ -723,6 +760,35 @@
       state.highlightBusy = !state.highlightBusy;
       $("highlightBtn").textContent = state.highlightBusy ? "取消高亮" : "使用高亮";
       refreshStatus(false);
+    });
+    $("servers").addEventListener("dragstart", (event) => {
+      const server = event.target.closest("details.server[data-key]");
+      if (!server) return;
+      state.draggingServer = server.dataset.key;
+      state.draggingElement = server;
+      server.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", state.draggingServer);
+    });
+    $("servers").addEventListener("dragover", (event) => {
+      const target = event.target.closest("details.server[data-key]");
+      const dragging = state.draggingElement;
+      if (!target || !dragging || target === dragging) return;
+      event.preventDefault();
+      const rect = target.getBoundingClientRect();
+      const beforeTarget = event.clientY < rect.top + rect.height / 2;
+      target.parentNode.insertBefore(dragging, beforeTarget ? target : target.nextSibling);
+    });
+    $("servers").addEventListener("drop", (event) => {
+      if (!state.draggingElement) return;
+      event.preventDefault();
+      persistServerOrderFromDom();
+    });
+    $("servers").addEventListener("dragend", () => {
+      if (state.draggingElement) state.draggingElement.classList.remove("dragging");
+      persistServerOrderFromDom();
+      state.draggingServer = null;
+      state.draggingElement = null;
     });
     $("servers").addEventListener("dblclick", (event) => {
       const head = event.target.closest(".server-head");

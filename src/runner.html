@@ -162,17 +162,20 @@
       margin: 20% auto;
       background: var(--line);
     }
-    .col-name { width: 24%; }
-    .col-host { width: 10%; }
-    .col-gpus { width: 10%; }
+    .col-name { width: 22%; }
+    .col-host { width: 9%; }
+    .col-gpus { width: 8%; }
+    .col-conda { width: 11%; }
     .col-status { width: 10%; }
-    .col-start { width: 14%; }
-    .col-duration { width: 10%; }
-    .col-actions { width: 22%; }
+    .col-start { width: 13%; }
+    .col-duration { width: 9%; }
+    .col-actions { width: 18%; }
     td:nth-child(2),
+    td:nth-child(3),
     td:nth-child(4),
     td:nth-child(5),
-    td:nth-child(6) {
+    td:nth-child(6),
+    td:nth-child(7) {
       white-space: nowrap;
       overflow-wrap: normal;
     }
@@ -241,6 +244,7 @@
             <col class="col-name">
             <col class="col-host">
             <col class="col-gpus">
+            <col class="col-conda">
             <col class="col-status">
             <col class="col-start">
             <col class="col-duration">
@@ -251,6 +255,7 @@
               <th data-sort="name">任务名</th>
               <th data-sort="host">服务器</th>
               <th data-sort="gpus">显卡号</th>
+              <th data-sort="conda_env">conda环境</th>
               <th data-sort="status">任务状态</th>
               <th data-sort="started_at">开始时间</th>
               <th data-sort="duration">运行时间</th>
@@ -476,6 +481,7 @@
             <td>${escapeHtml(task.name || "")}</td>
             <td>${escapeHtml(task.host || "")}</td>
             <td>${escapeHtml((task.gpus || []).join(","))}</td>
+            <td>${escapeHtml(task.conda_env || "不使用")}</td>
             <td class="${statusClass}">${statusText}</td>
             <td>${fmtTime(task.started_at)}</td>
             <td>${fmtDuration(task)}</td>
@@ -489,13 +495,13 @@
             </td>
           </tr>
         `;
-      }).join("") || `<tr><td colspan="7">还没有任务。</td></tr>`;
+      }).join("") || `<tr><td colspan="8">还没有任务。</td></tr>`;
       renderSortHeaders();
     }
 
     function enableColumnResize(table) {
       const cols = [...table.querySelectorAll("col")];
-      const minWidths = [150, 82, 76, 86, 116, 84, 154];
+      const minWidths = [140, 76, 68, 96, 86, 116, 84, 154];
       const lockColumnWidths = () => {
         const tableWidth = table.getBoundingClientRect().width;
         table.style.width = `${tableWidth}px`;
