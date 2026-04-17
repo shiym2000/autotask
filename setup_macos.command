@@ -58,16 +58,16 @@ find_conda() {
 }
 
 clear
-printf 'AutoTask4macOS 首次环境配置\n'
-printf '请不要关闭这个窗口。看到“环境准备完成”后，以后可以双击 start_monitor.command 或 start_runner.command。\n'
+printf 'AutoTask 首次环境配置\n'
+printf '请不要关闭这个窗口。看到“环境准备完成”后，以后可以双击 start_monitor_macos.command 或 start_runner_macos.command。\n'
 
 configure_proxy
 
 progress "1/4 查找 Conda"
 CONDA_BIN="$(find_conda || true)"
 if [ -z "$CONDA_BIN" ]; then
-  log "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 setup.command。"
-  osascript -e 'display dialog "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 setup.command。" buttons {"好"} default button "好"' >/dev/null 2>&1
+  log "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 setup_macos.command。"
+  osascript -e 'display dialog "没有找到 Conda。请先安装 Anaconda 或 Miniconda，然后重新双击 setup_macos.command。" buttons {"好"} default button "好"' >/dev/null 2>&1
   exit 1
 fi
 log "使用 Conda: $CONDA_BIN"
@@ -80,7 +80,7 @@ if "$CONDA_BIN" env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
   "$CONDA_BIN" update -y -n "${ENV_NAME}" python 2>&1 | tee -a "$LOG_FILE"
   if [ "${PIPESTATUS[0]}" -ne 0 ]; then
     log "更新 Conda 环境失败。请查看 data/setup.log。"
-    osascript -e 'display dialog "AutoTask4macOS 环境更新失败。请查看 autotask4macos/data/setup.log。" buttons {"好"} default button "好"' >/dev/null 2>&1
+    osascript -e 'display dialog "AutoTask 环境更新失败。请查看 data/setup.log。" buttons {"好"} default button "好"' >/dev/null 2>&1
     if [ -t 0 ]; then
       printf '\n环境更新失败。按回车关闭这个窗口。'
       read -r _
@@ -93,7 +93,7 @@ else
   "$CONDA_BIN" create -y -n "${ENV_NAME}" python=3.13 2>&1 | tee -a "$LOG_FILE"
   if [ "${PIPESTATUS[0]}" -ne 0 ]; then
     log "创建 Conda 环境失败。请确认 Conda 有可写的系统环境目录，或查看 data/setup.log。"
-    osascript -e 'display dialog "AutoTask4macOS 环境创建失败。请查看 autotask4macos/data/setup.log。" buttons {"好"} default button "好"' >/dev/null 2>&1
+    osascript -e 'display dialog "AutoTask 环境创建失败。请查看 data/setup.log。" buttons {"好"} default button "好"' >/dev/null 2>&1
     if [ -t 0 ]; then
       printf '\n环境创建失败。按回车关闭这个窗口。'
       read -r _
@@ -103,11 +103,11 @@ else
 fi
 
 progress "4/4 验证并完成"
-log "正在验证 AutoTask4macOS 环境。"
+log "正在验证 AutoTask 环境。"
 "$CONDA_BIN" run -n "${ENV_NAME}" python "$SRC_DIR/server.py" --self-test 2>&1 | tee -a "$LOG_FILE"
 if [ "${PIPESTATUS[0]}" -ne 0 ]; then
   log "环境验证失败，请查看 data/setup.log。"
-  osascript -e 'display dialog "AutoTask4macOS 环境验证失败。请查看 autotask4macos/data/setup.log。" buttons {"好"} default button "好"' >/dev/null 2>&1
+  osascript -e 'display dialog "AutoTask 环境验证失败。请查看 data/setup.log。" buttons {"好"} default button "好"' >/dev/null 2>&1
   if [ -t 0 ]; then
     printf '\n环境验证失败。按回车关闭这个窗口。'
     read -r _
@@ -115,8 +115,8 @@ if [ "${PIPESTATUS[0]}" -ne 0 ]; then
   exit 1
 fi
 
-log "AutoTask4macOS 环境准备完成。以后双击 start_monitor.command 打开监控，双击 start_runner.command 打开 Runner。"
-osascript -e 'display dialog "AutoTask4macOS 环境准备完成。以后双击 start_monitor.command 打开监控，双击 start_runner.command 打开 Runner。" buttons {"好"} default button "好"' >/dev/null 2>&1
+log "AutoTask 环境准备完成。以后双击 start_monitor_macos.command 打开监控，双击 start_runner_macos.command 打开 Runner。"
+osascript -e 'display dialog "AutoTask 环境准备完成。以后双击 start_monitor_macos.command 打开监控，双击 start_runner_macos.command 打开 Runner。" buttons {"好"} default button "好"' >/dev/null 2>&1
 if [ -t 0 ]; then
   printf '\n环境准备完成。按回车关闭这个窗口。'
   read -r _

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AutoTask4macOS Runner</title>
+  <title>AutoTask Runner</title>
   <style>
     :root {
       --bg: #f4f7f5;
@@ -226,7 +226,7 @@
   <main class="wrap">
     <header>
       <div>
-        <h1>AutoTask4macOS Runner</h1>
+        <h1>AutoTask Runner</h1>
         <p class="lede">选择服务器和 GPU，输入任务名与远端 sh 脚本路径，后台会在远端创建 tmux session 并运行。</p>
       </div>
       <div class="actions">
@@ -670,7 +670,7 @@
       const command = task.tmux_command || `tmux attach -t ${task.session || ""}`;
       const line = $("attachLine");
       line.classList.remove("hidden");
-      line.textContent = `已复制：${command}；正在打开 Terminal...`;
+      line.textContent = `已复制：${command}；正在打开命令行窗口...`;
       navigator.clipboard?.writeText(command).catch(() => {
         line.textContent = command;
       });
@@ -681,7 +681,7 @@
         });
         line.textContent = `已复制：${command}；已打开 ${task.host || "服务器"} 的 SSH 窗口`;
       } catch (err) {
-        line.textContent = `已复制：${command}；打开 Terminal 失败：${err.message}`;
+        line.textContent = `已复制：${command}；打开命令行窗口失败：${err.message}`;
       }
     }
 

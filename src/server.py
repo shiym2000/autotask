@@ -316,17 +316,16 @@ async def run_ssh_command(command: list[str], timeout: int = SSH_TIMEOUT) -> tup
 
 
 def ssh_base_command() -> list[str]:
-    return [
+    command = [
         "ssh",
         "-o",
         "BatchMode=yes",
         "-o",
-        "ControlMaster=no",
-        "-o",
-        "ControlPath=none",
-        "-o",
         f"ConnectTimeout={CONNECT_TIMEOUT}",
     ]
+    if os.name != "nt":
+        command[3:3] = ["-o", "ControlMaster=no", "-o", "ControlPath=none"]
+    return command
 
 
 async def run_ssh(host_alias: str, remote_command: str, timeout: int = SSH_TIMEOUT) -> tuple[int, str, str]:
@@ -673,21 +672,35 @@ def open_terminal_for_task(task_id: str) -> dict[str, str]:
     if not host:
         raise ValueError("任务没有服务器信息")
     command = f"ssh {shlex.quote(host)}"
-    script = (
-        'tell application "Terminal"\n'
-        "  activate\n"
-        f'  do script "{applescript_string(command)}"\n'
-        "end tell"
-    )
-    try:
-        subprocess.run(["osascript", "-e", script], check=True, capture_output=True, text=True, timeout=8)
-    except FileNotFoundError as exc:
-        raise RuntimeError("本机找不到 osascript，无法打开 Terminal") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("打开 Terminal 超时") from exc
-    except subprocess.CalledProcessError as exc:
-        raise RuntimeError((exc.stderr or exc.stdout or "打开 Terminal 失败").strip()) from exc
-    return {"command": command}
+    if sys.platform == "darwin":
+        script = (
+            'tell application "Terminal"\n'
+            "  activate\n"
+            f'  do script "{applescript_string(command)}"\n'
+            "end tell"
+        )
+        try:
+            subprocess.run(["osascript", "-e", script], check=True, capture_output=True, text=True, timeout=8)
+        except FileNotFoundError as exc:
+            raise RuntimeError("本机找不到 osascript，无法打开 Terminal") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("打开 Terminal 超时") from exc
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError((exc.stderr or exc.stdout or "打开 Terminal 失败").strip()) from exc
+        return {"command": command}
+    if os.name == "nt":
+        try:
+            subprocess.Popen(
+                ["cmd.exe", "/c", "start", "AutoTask SSH", "powershell", "-NoExit", "-Command", command],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("本机找不到 cmd.exe 或 PowerShell，无法打开命令行窗口") from exc
+        except OSError as exc:
+            raise RuntimeError(f"打开命令行窗口失败：{exc}") from exc
+        return {"command": command}
+    raise RuntimeError("当前系统暂不支持自动打开命令行窗口，请手动运行复制的 ssh 命令")
 
 
 def attach_process_users(gpus: list[dict[str, Any]], users: dict[str, str]) -> None:
@@ -758,7 +771,7 @@ async def heartbeat_loop() -> None:
         if CLIENT_STATE["seen"] and CLIENT_STATE["last_seen"] is not None:
             idle_for = time.time() - CLIENT_STATE["last_seen"]
             if idle_for > CLIENT_TIMEOUT:
-                stop_soon("No browser heartbeat detected; stopping AutoTask4macOS.", 0.25)
+                stop_soon("No browser heartbeat detected; stopping AutoTask.", 0.25)
                 return
 
         await asyncio.sleep(REFRESH_INTERVAL)
@@ -874,7 +887,7 @@ class GpuMonitorHandler(BaseHTTPRequestHandler):
             if length:
                 self.rfile.read(length)
             self.send_json({"ok": True})
-            stop_soon("Browser closed; stopping AutoTask4macOS.", 0.25)
+            stop_soon("Browser closed; stopping AutoTask.", 0.25)
             return
 
         if path == "/api/tasks":
@@ -998,7 +1011,7 @@ class GpuMonitorHandler(BaseHTTPRequestHandler):
 
 def run_http_server(port: int) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer(("127.0.0.1", port), GpuMonitorHandler)
-    log(f"AutoTask4macOS listening on http://127.0.0.1:{port}")
+    log(f"AutoTask listening on http://127.0.0.1:{port}")
     server.serve_forever()
     return server
 
@@ -1074,7 +1087,7 @@ def self_test() -> int:
 
 async def amain() -> int:
     global APP_MODE, SSH_SEMAPHORE
-    parser = argparse.ArgumentParser(description="AutoTask4macOS remote GPU monitor and task runner")
+    parser = argparse.ArgumentParser(description="AutoTask remote GPU monitor and task runner")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--open", action="store_true", help="open the web UI in the default browser")
