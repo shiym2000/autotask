@@ -182,6 +182,38 @@
     .status-running { color: var(--good); font-weight: 700; }
     .status-completed { color: var(--muted); font-weight: 700; }
     .status-interrupted { color: var(--bad); font-weight: 700; }
+    .task-name {
+      display: inline;
+      color: var(--ink);
+      cursor: text;
+      user-select: text;
+    }
+    .script-path-tip {
+      position: fixed;
+      z-index: 120;
+      display: none;
+      width: min(640px, calc(100vw - 24px));
+      max-height: 190px;
+      overflow: auto;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .98);
+      box-shadow: 0 18px 42px rgba(22, 33, 31, .18);
+      color: var(--ink);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+      user-select: text;
+    }
+    .script-path-tip.visible { display: block; }
+    .script-path-tip-label {
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 12px;
+    }
     .task-actions {
       display: grid;
       grid-template-columns: repeat(2, minmax(68px, 1fr));
@@ -311,6 +343,7 @@
         <div class="message" id="configMessage"></div>
       </section>
     </div>
+    <div class="script-path-tip" id="scriptPathTip" role="tooltip"></div>
   </main>
 
   <script>
@@ -468,6 +501,7 @@
     }
 
     function renderTasks() {
+      hideScriptPathTip();
       $("taskRows").innerHTML = sortedTasks().map((task) => {
         const normalizedStatus = task.status === "running"
           ? "running"
@@ -482,7 +516,7 @@
             : "Interrupted";
         return `
           <tr>
-            <td>${escapeHtml(task.name || "")}</td>
+            <td><span class="task-name" tabindex="0" data-script-path="${escapeHtml(task.script_path || "")}">${escapeHtml(task.name || "")}</span></td>
             <td>${escapeHtml(task.host || "")}</td>
             <td>${escapeHtml((task.gpus || []).join(","))}</td>
             <td>${escapeHtml(task.conda_env || "不使用")}</td>
@@ -746,6 +780,36 @@
         .replaceAll("'", "&#039;");
     }
 
+    let scriptTipTimer = null;
+
+    function hideScriptPathTip() {
+      if (scriptTipTimer) clearTimeout(scriptTipTimer);
+      $("scriptPathTip").classList.remove("visible");
+    }
+
+    function scheduleHideScriptPathTip() {
+      if (scriptTipTimer) clearTimeout(scriptTipTimer);
+      scriptTipTimer = setTimeout(hideScriptPathTip, 180);
+    }
+
+    function showScriptPathTip(target) {
+      const path = target.dataset.scriptPath || "未记录脚本路径";
+      const tip = $("scriptPathTip");
+      if (scriptTipTimer) clearTimeout(scriptTipTimer);
+      tip.innerHTML = `
+        <div class="script-path-tip-label">脚本路径</div>
+        <div>${escapeHtml(path)}</div>
+      `;
+      tip.classList.add("visible");
+
+      const rect = target.getBoundingClientRect();
+      const margin = 8;
+      const top = Math.min(window.innerHeight - tip.offsetHeight - margin, rect.bottom + margin);
+      const left = Math.min(window.innerWidth - tip.offsetWidth - margin, rect.left);
+      tip.style.top = `${Math.max(margin, top)}px`;
+      tip.style.left = `${Math.max(margin, left)}px`;
+    }
+
     $("serverSelect").addEventListener("change", async (event) => {
       state.selectedHost = event.target.value;
       state.selectedGpus.clear();
@@ -802,10 +866,33 @@
       if (del) deleteTask(del.dataset.delete);
       if (remove) removeTask(remove.dataset.remove);
     });
+    $("taskRows").addEventListener("pointerover", (event) => {
+      const taskName = event.target.closest(".task-name");
+      if (taskName) showScriptPathTip(taskName);
+    });
+    $("taskRows").addEventListener("pointerout", (event) => {
+      const taskName = event.target.closest(".task-name");
+      if (taskName) scheduleHideScriptPathTip();
+    });
+    $("taskRows").addEventListener("focusin", (event) => {
+      const taskName = event.target.closest(".task-name");
+      if (taskName) showScriptPathTip(taskName);
+    });
+    $("taskRows").addEventListener("focusout", (event) => {
+      const taskName = event.target.closest(".task-name");
+      if (taskName) scheduleHideScriptPathTip();
+    });
+    $("scriptPathTip").addEventListener("pointerover", () => {
+      if (scriptTipTimer) clearTimeout(scriptTipTimer);
+    });
+    $("scriptPathTip").addEventListener("pointerout", scheduleHideScriptPathTip);
+    window.addEventListener("scroll", hideScriptPathTip);
+    window.addEventListener("resize", hideScriptPathTip);
     window.addEventListener("pagehide", shutdownServer);
     window.addEventListener("beforeunload", shutdownServer);
     window.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      hideScriptPathTip();
       $("taskModal").classList.add("hidden");
       if (state.config?.configured) $("configModal").classList.add("hidden");
     });
