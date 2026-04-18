@@ -209,6 +209,8 @@ def load_status_cache() -> None:
     for key in ("updated_at", "hosts", "results", "config_error"):
         if key in cached:
             STATE[key] = cached[key]
+    hosts, _ = load_hosts()
+    ensure_status_results_cover_hosts(hosts)
 
 
 def save_status_cache() -> None:
@@ -223,6 +225,30 @@ def save_status_cache() -> None:
         MONITOR_STATUS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError as exc:
         log(f"Failed to save monitor status cache: {exc}")
+
+
+def pending_host_result(host: HostConfig) -> dict[str, Any]:
+    return {
+        **host.public_dict(),
+        "checked_at": None,
+        "latency_ms": None,
+        "ok": False,
+        "error_type": "pending",
+        "error": "等待刷新",
+        "gpus": [],
+    }
+
+
+def ensure_status_results_cover_hosts(hosts: list[HostConfig]) -> None:
+    if not hosts:
+        return
+    by_alias = {
+        str(item.get("alias", "")): item
+        for item in STATE.get("results", [])
+        if isinstance(item, dict) and item.get("alias")
+    }
+    STATE["hosts"] = [host.public_dict() for host in hosts]
+    STATE["results"] = [by_alias.get(host.alias, pending_host_result(host)) for host in hosts]
 
 
 def sanitize_session_name(name: str) -> str:
@@ -384,6 +410,7 @@ async def refresh_status_once(host_alias: str | None = None) -> None:
     hosts, config_error = load_hosts()
     STATE["hosts"] = [host.public_dict() for host in hosts]
     STATE["config_error"] = config_error
+    ensure_status_results_cover_hosts(hosts)
     selected_hosts = [host for host in hosts if not host_alias or host.alias == host_alias]
     fresh_results = await asyncio.gather(*(collect_host(host) for host in selected_hosts)) if selected_hosts else []
     if host_alias:
@@ -391,9 +418,11 @@ async def refresh_status_once(host_alias: str | None = None) -> None:
         for item in fresh_results:
             by_alias[item.get("alias")] = item
         configured_aliases = [host.alias for host in hosts]
-        STATE["results"] = [by_alias[alias] for alias in configured_aliases if alias in by_alias]
+        by_host = {host.alias: host for host in hosts}
+        STATE["results"] = [by_alias.get(alias, pending_host_result(by_host[alias])) for alias in configured_aliases]
     else:
         STATE["results"] = fresh_results
+        ensure_status_results_cover_hosts(hosts)
     STATE["updated_at"] = time.time()
     save_status_cache()
 
@@ -908,6 +937,10 @@ class GpuMonitorHandler(BaseHTTPRequestHandler):
             if force_refresh:
                 host = (query.get("host") or [""])[0] or None
                 asyncio.run(refresh_status_once(host))
+            else:
+                hosts, config_error = load_hosts()
+                STATE["config_error"] = config_error
+                ensure_status_results_cover_hosts(hosts)
             self.send_json(STATE)
         elif path == "/api/tasks":
             query = parse_qs(parsed.query)
@@ -1160,6 +1193,16 @@ def self_test() -> int:
     assert read_done_file("") == (None, None)
     assert parse_autotask_exit_code("[autotask] 程序已结束，退出码: 1") == "1"
     assert parse_autotask_exit_code("no marker") is None
+    original_results = STATE.get("results", [])
+    original_hosts = STATE.get("hosts", [])
+    hosts_for_status = [HostConfig("gpu-a"), HostConfig("gpu-b")]
+    STATE["results"] = [{"alias": "gpu-a", "ok": True, "gpus": []}]
+    ensure_status_results_cover_hosts(hosts_for_status)
+    assert [item["alias"] for item in STATE["results"]] == ["gpu-a", "gpu-b"]
+    assert STATE["results"][0]["ok"] is True
+    assert STATE["results"][1]["error_type"] == "pending"
+    STATE["results"] = original_results
+    STATE["hosts"] = original_hosts
     task = {"status": "completed", "exit_code": "1", "last_error": ""}
     assert normalize_task_exit_status(task)
     assert task["status"] == "interrupted"
