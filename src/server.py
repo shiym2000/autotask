@@ -555,8 +555,7 @@ async def refresh_task_status(task: dict[str, Any]) -> None:
                 return
     code, stdout, stderr = await run_ssh(host, f"tmux has-session -t {shlex.quote(session)}", timeout=CONNECT_TIMEOUT)
     if code != 0:
-        message = f"{stdout}\n{stderr}".lower()
-        if "can't find session" in message or "no server running" in message:
+        if tmux_session_missing(stdout, stderr):
             if task.get("status") == "running":
                 task["status"] = "interrupted"
                 mark_task_ended(task)
@@ -681,6 +680,56 @@ async def list_remote_conda_envs(host: str) -> list[str]:
     return envs
 
 
+def tmux_session_missing(stdout: str, stderr: str) -> bool:
+    message = f"{stdout}\n{stderr}".lower()
+    return "can't find session" in message or "no server running" in message
+
+
+async def remote_tmux_session_exists(task: dict[str, Any]) -> bool:
+    session = str(task.get("session", ""))
+    code, stdout, stderr = await run_ssh(
+        str(task.get("host", "")),
+        f"tmux has-session -t {shlex.quote(session)}",
+        timeout=SSH_TIMEOUT,
+    )
+    if code == 0:
+        return True
+    if tmux_session_missing(stdout, stderr):
+        return False
+    raise RuntimeError(stderr.strip() or stdout.strip() or "检查 tmux session 失败")
+
+
+async def remote_task_finished(task: dict[str, Any]) -> bool:
+    done_file = str(task.get("done_file", ""))
+    if done_file:
+        done_code, stdout, _ = await run_ssh(
+            str(task.get("host", "")),
+            f"cat {shlex.quote(done_file)} 2>/dev/null",
+            timeout=CONNECT_TIMEOUT,
+        )
+        if done_code == 0:
+            exit_code, ended_at = read_done_file(stdout)
+            if exit_code is not None:
+                apply_task_exit_code(task, exit_code, ended_at)
+                return True
+
+    session = str(task.get("session", ""))
+    code, stdout, stderr = await run_ssh(
+        str(task.get("host", "")),
+        f"tmux capture-pane -pt {shlex.quote(session)} -S -80",
+        timeout=CONNECT_TIMEOUT,
+    )
+    if code != 0:
+        if tmux_session_missing(stdout, stderr):
+            return True
+        raise RuntimeError(stderr.strip() or stdout.strip() or "读取 tmux 内容失败")
+    exit_code = parse_autotask_exit_code(stdout)
+    if exit_code is None:
+        return False
+    apply_task_exit_code(task, exit_code)
+    return True
+
+
 async def delete_remote_task(task_id: str) -> dict[str, Any]:
     task = next((item for item in TASKS if str(item.get("id")) == task_id), None)
     if not task:
@@ -688,7 +737,7 @@ async def delete_remote_task(task_id: str) -> dict[str, Any]:
     was_completed = is_completed_task(task)
     session = str(task.get("session", ""))
     code, stdout, stderr = await run_ssh(str(task.get("host", "")), f"tmux kill-session -t {shlex.quote(session)}", timeout=SSH_TIMEOUT)
-    if code != 0 and "can't find session" not in stderr.lower():
+    if code != 0 and not tmux_session_missing(stdout, stderr):
         raise RuntimeError(stderr.strip() or stdout.strip() or "删除 tmux session 失败")
     if not was_completed:
         task["status"] = "interrupted"
@@ -703,7 +752,17 @@ async def remove_task_record(task_id: str) -> dict[str, Any]:
     task = next((item for item in TASKS if str(item.get("id")) == task_id), None)
     if not task:
         raise ValueError("任务不存在")
-    await delete_remote_task(task_id)
+    if await remote_tmux_session_exists(task):
+        if not await remote_task_finished(task):
+            raise RuntimeError("tmux session 仍存在，且没有检测到程序结束标记；请先终止程序或等待任务结束。")
+        session = str(task.get("session", ""))
+        code, stdout, stderr = await run_ssh(
+            str(task.get("host", "")),
+            f"tmux kill-session -t {shlex.quote(session)}",
+            timeout=SSH_TIMEOUT,
+        )
+        if code != 0 and not tmux_session_missing(stdout, stderr):
+            raise RuntimeError(stderr.strip() or stdout.strip() or "删除 tmux session 失败")
     TASKS = [item for item in TASKS if str(item.get("id")) != task_id]
     save_tasks()
     return task
@@ -1227,6 +1286,9 @@ def self_test() -> int:
     assert read_done_file("") == (None, None)
     assert parse_autotask_exit_code("[autotask] 程序已结束，退出码: 1") == "1"
     assert parse_autotask_exit_code("no marker") is None
+    assert tmux_session_missing("", "can't find session: train")
+    assert tmux_session_missing("no server running on /tmp/tmux-501/default", "")
+    assert not tmux_session_missing("", "permission denied")
     original_results = STATE.get("results", [])
     original_hosts = STATE.get("hosts", [])
     hosts_for_status = [HostConfig("gpu-a"), HostConfig("gpu-b")]
