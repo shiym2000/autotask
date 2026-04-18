@@ -541,7 +541,7 @@ async def fetch_process_users(host: HostConfig, pids: list[str]) -> dict[str, st
 
 
 async def refresh_task_status(task: dict[str, Any]) -> None:
-    if task.get("status") not in {"running", "completed", "finished"}:
+    if task.get("status") != "running":
         return
     host = str(task.get("host", ""))
     session = str(task.get("session", ""))
@@ -733,6 +733,25 @@ async def update_task_note(task_id: str, note: str) -> dict[str, Any]:
     if not task:
         raise ValueError("任务不存在")
     task["note"] = note[:1000]
+    save_tasks()
+    return task
+
+
+async def update_task_status(task_id: str, status: str) -> dict[str, Any]:
+    task = next((item for item in TASKS if str(item.get("id")) == task_id), None)
+    if not task:
+        raise ValueError("任务不存在")
+    if status not in {"running", "completed", "interrupted"}:
+        raise ValueError("任务状态必须是 running、completed 或 interrupted")
+    task["status"] = status
+    task["exit_code"] = "0" if status == "completed" else ""
+    if status in {"running", "completed"}:
+        task["last_error"] = ""
+    if status == "running":
+        task["ended_at"] = None
+    elif not task.get("ended_at"):
+        task["ended_at"] = time.time()
+    task["updated_at"] = time.time()
     save_tasks()
     return task
 
@@ -1064,6 +1083,21 @@ class GpuMonitorHandler(BaseHTTPRequestHandler):
             try:
                 payload = json.loads(raw)
                 task = asyncio.run(update_task_note(str(payload.get("id", "")), str(payload.get("note", ""))))
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "error": "请求不是合法 JSON"}, HTTPStatus.BAD_REQUEST)
+                return
+            except (ValueError, RuntimeError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"ok": True, "task": public_task(task)})
+            return
+
+        if path == "/api/tasks/status":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8", errors="replace")
+            try:
+                payload = json.loads(raw)
+                task = asyncio.run(update_task_status(str(payload.get("id", "")), str(payload.get("status", ""))))
             except json.JSONDecodeError:
                 self.send_json({"ok": False, "error": "请求不是合法 JSON"}, HTTPStatus.BAD_REQUEST)
                 return

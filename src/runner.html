@@ -112,6 +112,34 @@
     .message { min-height: 22px; color: var(--muted); margin-top: 8px; }
     .message.error { color: var(--bad); }
     .message.good { color: var(--good); }
+    .task-status-summary {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin: 0 0 14px;
+      padding: 10px 0;
+      background: rgba(244, 247, 245, .94);
+      backdrop-filter: blur(10px);
+    }
+    .summary-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 7px 10px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .summary-chip strong { color: var(--ink); }
+    .summary-chip.running strong { color: var(--good); }
+    .summary-chip.completed strong { color: var(--muted); }
+    .summary-chip.interrupted strong { color: var(--bad); }
     .modal-scrim {
       position: fixed;
       inset: 0;
@@ -223,6 +251,19 @@
     }
     .status-note-tip-content { white-space: pre-wrap; }
     .status-note-tip-empty { color: var(--muted); }
+    .status-action-menu {
+      position: fixed;
+      z-index: 130;
+      display: none;
+      width: min(230px, calc(100vw - 24px));
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .98);
+      box-shadow: 0 18px 42px rgba(22, 33, 31, .18);
+    }
+    .status-action-menu.visible { display: grid; gap: 6px; }
+    .status-action-menu .btn { width: 100%; text-align: left; }
     .task-actions {
       display: grid;
       grid-template-columns: repeat(2, minmax(68px, 1fr));
@@ -276,6 +317,13 @@
         <button class="btn primary" id="refreshBtn">刷新</button>
       </div>
     </header>
+
+    <div class="task-status-summary" aria-label="任务状态统计">
+      <span class="summary-chip">全部 <strong id="countAll">0</strong></span>
+      <span class="summary-chip running">Running <strong id="countRunning">0</strong></span>
+      <span class="summary-chip completed">Completed <strong id="countCompleted">0</strong></span>
+      <span class="summary-chip interrupted">Interrupted <strong id="countInterrupted">0</strong></span>
+    </div>
 
     <section class="grid">
       <div class="panel task-table-panel">
@@ -354,6 +402,7 @@
     </div>
     <div class="script-path-tip" id="scriptPathTip" role="tooltip"></div>
     <div class="status-note-tip" id="statusNoteTip" role="tooltip"></div>
+    <div class="status-action-menu" id="statusActionMenu" role="menu"></div>
   </main>
 
   <script>
@@ -442,6 +491,23 @@
       }
     }
 
+    function normalizedTaskStatus(task) {
+      if (task.status === "running") return "running";
+      if (["completed", "finished"].includes(task.status)) return "completed";
+      return "interrupted";
+    }
+
+    function renderStatusSummary() {
+      const counts = { running: 0, completed: 0, interrupted: 0 };
+      state.tasks.forEach((task) => {
+        counts[normalizedTaskStatus(task)] += 1;
+      });
+      $("countAll").textContent = String(state.tasks.length);
+      $("countRunning").textContent = String(counts.running);
+      $("countCompleted").textContent = String(counts.completed);
+      $("countInterrupted").textContent = String(counts.interrupted);
+    }
+
     function sortedTasks() {
       const tasks = [...state.tasks];
       const key = state.sortKey;
@@ -513,12 +579,10 @@
     function renderTasks() {
       hideScriptPathTip();
       hideStatusNoteTip();
+      hideStatusActionMenu();
+      renderStatusSummary();
       $("taskRows").innerHTML = sortedTasks().map((task) => {
-        const normalizedStatus = task.status === "running"
-          ? "running"
-          : ["completed", "finished"].includes(task.status)
-            ? "completed"
-            : "interrupted";
+        const normalizedStatus = normalizedTaskStatus(task);
         const statusClass = `status-${normalizedStatus}`;
         const statusText = normalizedStatus === "running"
           ? "Running"
@@ -862,6 +926,32 @@
       tip.style.left = `${Math.max(margin, left)}px`;
     }
 
+    function hideStatusActionMenu() {
+      $("statusActionMenu").classList.remove("visible");
+      $("statusActionMenu").innerHTML = "";
+    }
+
+    function showStatusActionMenu(target) {
+      const task = taskById(target.dataset.noteTask);
+      if (!task) return;
+      hideStatusNoteTip();
+      const menu = $("statusActionMenu");
+      menu.innerHTML = `
+        <button class="btn small" data-edit-note="${escapeHtml(task.id)}" type="button">编辑备注</button>
+        <button class="btn small" data-set-status="running" data-status-task="${escapeHtml(task.id)}" type="button">标记为 Running</button>
+        <button class="btn small" data-set-status="completed" data-status-task="${escapeHtml(task.id)}" type="button">标记为 Completed</button>
+        <button class="btn small" data-set-status="interrupted" data-status-task="${escapeHtml(task.id)}" type="button">标记为 Interrupted</button>
+      `;
+      menu.classList.add("visible");
+
+      const rect = target.getBoundingClientRect();
+      const margin = 8;
+      const top = Math.min(window.innerHeight - menu.offsetHeight - margin, rect.bottom + margin);
+      const left = Math.min(window.innerWidth - menu.offsetWidth - margin, rect.left);
+      menu.style.top = `${Math.max(margin, top)}px`;
+      menu.style.left = `${Math.max(margin, left)}px`;
+    }
+
     async function editTaskNote(id) {
       const task = taskById(id);
       if (!task) return;
@@ -871,6 +961,19 @@
         const data = await api("/api/tasks/note", {
           method: "POST",
           body: JSON.stringify({ id, note: nextNote }),
+        });
+        state.tasks = state.tasks.map((item) => item.id === id ? data.task : item);
+        renderTasks();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function editTaskStatus(id, status) {
+      try {
+        const data = await api("/api/tasks/status", {
+          method: "POST",
+          body: JSON.stringify({ id, status }),
         });
         state.tasks = state.tasks.map((item) => item.id === id ? data.task : item);
         renderTasks();
@@ -931,7 +1034,10 @@
       const stop = event.target.closest("[data-stop]");
       const del = event.target.closest("[data-delete]");
       const remove = event.target.closest("[data-remove]");
-      if (noteStatus) editTaskNote(noteStatus.dataset.noteTask);
+      if (noteStatus) {
+        showStatusActionMenu(noteStatus);
+        return;
+      }
       if (attach) showAttach(attach.dataset.attach);
       if (stop) stopTask(stop.dataset.stop);
       if (del) deleteTask(del.dataset.delete);
@@ -977,13 +1083,32 @@
       if (statusNoteTimer) clearTimeout(statusNoteTimer);
     });
     $("statusNoteTip").addEventListener("pointerout", scheduleHideStatusNoteTip);
+    $("statusActionMenu").addEventListener("click", (event) => {
+      const note = event.target.closest("[data-edit-note]");
+      const status = event.target.closest("[data-set-status]");
+      if (note) {
+        hideStatusActionMenu();
+        editTaskNote(note.dataset.editNote);
+      }
+      if (status) {
+        hideStatusActionMenu();
+        editTaskStatus(status.dataset.statusTask, status.dataset.setStatus);
+      }
+    });
+    document.addEventListener("click", (event) => {
+      const status = event.target.closest("[data-note-task]");
+      const menu = event.target.closest("#statusActionMenu");
+      if (!status && !menu) hideStatusActionMenu();
+    });
     window.addEventListener("scroll", () => {
       hideScriptPathTip();
       hideStatusNoteTip();
+      hideStatusActionMenu();
     });
     window.addEventListener("resize", () => {
       hideScriptPathTip();
       hideStatusNoteTip();
+      hideStatusActionMenu();
     });
     window.addEventListener("pagehide", shutdownServer);
     window.addEventListener("beforeunload", shutdownServer);
@@ -991,6 +1116,7 @@
       if (event.key !== "Escape") return;
       hideScriptPathTip();
       hideStatusNoteTip();
+      hideStatusActionMenu();
       $("taskModal").classList.add("hidden");
       if (state.config?.configured) $("configModal").classList.add("hidden");
     });
