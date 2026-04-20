@@ -999,7 +999,9 @@
     function showStatusNoteTip(target) {
       const task = taskById(target.dataset.noteTask);
       const note = String(task?.note || "");
-      const queueAfter = task?.queue_after_name || taskById(task?.queue_after_id)?.name || "";
+      const queueAfter = normalizedTaskStatus(task || {}) === "queued"
+        ? task?.queue_after_name || taskById(task?.queue_after_id)?.name || ""
+        : "";
       const tip = $("statusNoteTip");
       if (statusNoteTimer) clearTimeout(statusNoteTimer);
       const queueText = queueAfter ? `<div class="status-note-tip-label">排队</div><div class="status-note-tip-content">排在 ${escapeHtml(queueAfter)} 后面</div>` : "";
