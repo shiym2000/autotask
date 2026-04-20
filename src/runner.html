@@ -146,6 +146,7 @@
     }
     .summary-chip strong { color: var(--ink); }
     .summary-chip.running strong { color: var(--good); }
+    .summary-chip.queued strong { color: var(--warn); }
     .summary-chip.completed strong { color: var(--muted); }
     .summary-chip.interrupted strong { color: var(--bad); }
     .modal-scrim {
@@ -216,6 +217,7 @@
       overflow-wrap: normal;
     }
     .status-running { color: var(--good); font-weight: 700; }
+    .status-queued { color: var(--warn); font-weight: 700; }
     .status-completed { color: var(--muted); font-weight: 700; }
     .status-interrupted { color: var(--bad); font-weight: 700; }
     .task-status {
@@ -332,6 +334,7 @@
     <div class="task-status-summary" aria-label="任务状态统计">
       <button class="summary-chip active" data-status-filter="all" type="button">全部 <strong id="countAll">0</strong></button>
       <button class="summary-chip running" data-status-filter="running" type="button">Running <strong id="countRunning">0</strong></button>
+      <button class="summary-chip queued" data-status-filter="queued" type="button">Queued <strong id="countQueued">0</strong></button>
       <button class="summary-chip completed" data-status-filter="completed" type="button">Completed <strong id="countCompleted">0</strong></button>
       <button class="summary-chip interrupted" data-status-filter="interrupted" type="button">Interrupted <strong id="countInterrupted">0</strong></button>
     </div>
@@ -393,6 +396,11 @@
         <div class="field">
           <label for="scriptPath">远端sh脚本路径</label>
           <input id="scriptPath" value="~/projects/autotask.sh" placeholder="例如 ~/projects/autotask.sh">
+        </div>
+        <div class="field">
+          <label for="queueAfterSelect">自动排队</label>
+          <select id="queueAfterSelect"></select>
+          <div class="hint">选择一个 Running 或 Queued 任务后，新任务会等待它结束后复用同一个 tmux 启动。</div>
         </div>
         <button class="btn primary" id="startTaskBtn">启动 tmux 任务</button>
         <button class="btn" id="cancelTaskBtn">取消</button>
@@ -506,17 +514,19 @@
 
     function normalizedTaskStatus(task) {
       if (task.status === "running") return "running";
+      if (task.status === "queued") return "queued";
       if (["completed", "finished"].includes(task.status)) return "completed";
       return "interrupted";
     }
 
     function renderStatusSummary() {
-      const counts = { running: 0, completed: 0, interrupted: 0 };
+      const counts = { running: 0, queued: 0, completed: 0, interrupted: 0 };
       state.tasks.forEach((task) => {
         counts[normalizedTaskStatus(task)] += 1;
       });
       $("countAll").textContent = String(state.tasks.length);
       $("countRunning").textContent = String(counts.running);
+      $("countQueued").textContent = String(counts.queued);
       $("countCompleted").textContent = String(counts.completed);
       $("countInterrupted").textContent = String(counts.interrupted);
       document.querySelectorAll("[data-status-filter]").forEach((button) => {
@@ -539,7 +549,7 @@
     }
 
     function taskEndTimeLabel(task) {
-      if (normalizedTaskStatus(task) === "running") return "";
+      if (!["completed", "interrupted"].includes(normalizedTaskStatus(task))) return "";
       const ended = taskEndTime(task);
       return ended ? fmtTime(ended) : "";
     }
@@ -627,6 +637,8 @@
         const statusClass = `status-${normalizedStatus}`;
         const statusText = normalizedStatus === "running"
           ? "Running"
+          : normalizedStatus === "queued"
+            ? "Queued"
           : normalizedStatus === "completed"
             ? "Completed"
             : "Interrupted";
@@ -770,6 +782,14 @@
       renderTasks();
     }
 
+    function renderQueueOptions() {
+      const queueable = state.tasks.filter((task) => ["running", "queued"].includes(normalizedTaskStatus(task)));
+      $("queueAfterSelect").innerHTML = `<option value="">不排队，立即启动新 tmux</option>` + queueable.map((task) => {
+        const status = normalizedTaskStatus(task) === "queued" ? "Queued" : "Running";
+        return `<option value="${escapeHtml(task.id)}">${escapeHtml(task.name || "")} · ${status} · ${escapeHtml(task.host || "")}</option>`;
+      }).join("");
+    }
+
     async function saveConfig() {
       try {
         const payload = await api("/api/config", {
@@ -797,6 +817,7 @@
             gpus: [...state.selectedGpus],
             conda_env: $("condaSelect").value,
             script_path: $("scriptPath").value,
+            queue_after_id: $("queueAfterSelect").value,
           }),
         });
         message("taskMessage", "任务已启动。", "good");
@@ -815,6 +836,7 @@
       await loadSelectedServerGpus(false);
       await loadRemoteCondaEnvs();
       if (typeof last.conda_env === "string") $("condaSelect").value = last.conda_env;
+      renderQueueOptions();
     }
 
     function openConfigModal() {
@@ -977,17 +999,14 @@
     function showStatusNoteTip(target) {
       const task = taskById(target.dataset.noteTask);
       const note = String(task?.note || "");
+      const queueAfter = task?.queue_after_name || taskById(task?.queue_after_id)?.name || "";
       const tip = $("statusNoteTip");
       if (statusNoteTimer) clearTimeout(statusNoteTimer);
-      tip.innerHTML = note
-        ? `
-          <div class="status-note-tip-label">备注</div>
-          <div class="status-note-tip-content">${escapeHtml(note)}</div>
-        `
-        : `
-          <div class="status-note-tip-label">备注</div>
-          <div class="status-note-tip-content status-note-tip-empty">暂无备注，点击任务状态添加。</div>
-        `;
+      const queueText = queueAfter ? `<div class="status-note-tip-label">排队</div><div class="status-note-tip-content">排在 ${escapeHtml(queueAfter)} 后面</div>` : "";
+      const noteText = note
+        ? `<div class="status-note-tip-label">备注</div><div class="status-note-tip-content">${escapeHtml(note)}</div>`
+        : `<div class="status-note-tip-label">备注</div><div class="status-note-tip-content status-note-tip-empty">暂无备注，点击任务状态添加。</div>`;
+      tip.innerHTML = `${queueText}${noteText}`;
       tip.classList.add("visible");
 
       const rect = target.getBoundingClientRect();
@@ -1067,6 +1086,15 @@
       saveLastTaskForm();
     });
     $("condaSelect").addEventListener("change", saveLastTaskForm);
+    $("queueAfterSelect").addEventListener("change", async (event) => {
+      const task = taskById(event.target.value);
+      if (!task) return;
+      state.selectedHost = task.host || state.selectedHost;
+      state.selectedGpus.clear();
+      renderServers();
+      await loadSelectedServerGpus(false);
+      await loadRemoteCondaEnvs();
+    });
     $("taskName").addEventListener("input", saveLastTaskForm);
     $("scriptPath").addEventListener("input", saveLastTaskForm);
     $("addTaskBtn").addEventListener("click", openTaskModal);
