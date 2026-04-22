@@ -696,6 +696,15 @@ async def refresh_all_tasks() -> None:
     save_tasks()
 
 
+async def refresh_one_task(task_id: str) -> dict[str, Any]:
+    task = next((item for item in TASKS if str(item.get("id")) == task_id), None)
+    if not task:
+        raise ValueError("任务不存在")
+    await refresh_task_status(task)
+    save_tasks()
+    return task
+
+
 async def clear_stale_task_name(name: str) -> None:
     global TASKS
     matches = [task for task in TASKS if str(task.get("name", "")).strip() == name]
@@ -907,6 +916,7 @@ async def delete_remote_task(task_id: str) -> dict[str, Any]:
     code, stdout, stderr = await run_ssh(str(task.get("host", "")), f"tmux kill-session -t {shlex.quote(session)}", timeout=SSH_TIMEOUT)
     if code != 0 and not tmux_session_missing(stdout, stderr):
         raise RuntimeError(stderr.strip() or stdout.strip() or "删除 tmux session 失败")
+    task["delete_sent"] = True
     if not was_completed:
         task["status"] = "interrupted"
         mark_task_ended(task)
@@ -961,6 +971,7 @@ async def stop_remote_task(task_id: str) -> dict[str, Any]:
     code, stdout, stderr = await run_ssh(str(task.get("host", "")), f"tmux send-keys -t {shlex.quote(session)} C-c", timeout=SSH_TIMEOUT)
     if code != 0:
         raise RuntimeError(stderr.strip() or stdout.strip() or "终止任务程序失败")
+    task["stop_sent"] = True
     task["status"] = "interrupted"
     mark_task_ended(task)
     task["updated_at"] = time.time()
@@ -1275,6 +1286,21 @@ class GpuMonitorHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
             self.send_json({"ok": True, **result})
+            return
+
+        if path == "/api/tasks/refresh":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8", errors="replace")
+            try:
+                payload = json.loads(raw)
+                task = asyncio.run(refresh_one_task(str(payload.get("id", ""))))
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "error": "请求不是合法 JSON"}, HTTPStatus.BAD_REQUEST)
+                return
+            except (ValueError, RuntimeError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json({"ok": True, "task": public_task(task)})
             return
 
         if path == "/api/tasks/stop":

@@ -669,6 +669,8 @@
             : "Interrupted";
         const endTime = taskEndTimeLabel(task);
         const queueNoop = normalizedStatus === "queued" ? " disabled title=\"排队任务尚未进入 tmux，不会影响正在运行的任务\"" : "";
+        const stopDisabled = queueNoop || (task.stop_sent || task.delete_sent ? " disabled title=\"已成功发送过终止或删除命令\"" : "");
+        const deleteDisabled = queueNoop || (task.delete_sent ? " disabled title=\"已成功发送过删除 tmux 命令\"" : "");
         return `
           <tr>
             <td><span class="task-name" tabindex="0" data-script-path="${escapeHtml(task.script_path || "")}">${escapeHtml(task.name || "")}</span></td>
@@ -682,9 +684,10 @@
             <td><span class="task-duration" data-end-time="${escapeHtml(endTime)}">${fmtDuration(task)}</span></td>
             <td>
               <div class="task-actions">
+                <button class="btn small" data-refresh-task="${escapeHtml(task.id)}">刷新</button>
                 <button class="btn small" data-attach="${escapeHtml(task.id)}">打开tmux</button>
-                <button class="btn small" data-stop="${escapeHtml(task.id)}"${queueNoop}>终止程序</button>
-                <button class="btn small" data-delete="${escapeHtml(task.id)}"${queueNoop}>删除tmux</button>
+                <button class="btn small" data-stop="${escapeHtml(task.id)}"${stopDisabled}>终止程序</button>
+                <button class="btn small" data-delete="${escapeHtml(task.id)}"${deleteDisabled}>删除tmux</button>
                 <button class="btn small" data-remove="${escapeHtml(task.id)}">删除任务</button>
               </div>
             </td>
@@ -914,11 +917,25 @@
       const ok = window.confirm(`确定要删除远端 tmux session “${task.session}” 吗？\n这会停止该任务。`);
       if (!ok) return;
       try {
-        await api("/api/tasks/delete", {
+        const data = await api("/api/tasks/delete", {
           method: "POST",
           body: JSON.stringify({ id }),
         });
-        await loadTasks();
+        state.tasks = state.tasks.map((item) => item.id === id ? data.task : item);
+        renderTasks();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function refreshTask(id) {
+      try {
+        const data = await api("/api/tasks/refresh", {
+          method: "POST",
+          body: JSON.stringify({ id }),
+        });
+        state.tasks = state.tasks.map((item) => item.id === id ? data.task : item);
+        renderTasks();
       } catch (err) {
         alert(err.message);
       }
@@ -930,11 +947,12 @@
       const ok = window.confirm(`确定要终止任务“${task.name}”当前正在运行的程序吗？\n这只会向 tmux 发送 Ctrl-C，不会删除 tmux session。`);
       if (!ok) return;
       try {
-        await api("/api/tasks/stop", {
+        const data = await api("/api/tasks/stop", {
           method: "POST",
           body: JSON.stringify({ id }),
         });
-        await loadTasks();
+        state.tasks = state.tasks.map((item) => item.id === id ? data.task : item);
+        renderTasks();
       } catch (err) {
         alert(err.message);
       }
@@ -1199,6 +1217,7 @@
     });
     $("taskRows").addEventListener("click", (event) => {
       const noteStatus = event.target.closest("[data-note-task]");
+      const refresh = event.target.closest("[data-refresh-task]");
       const attach = event.target.closest("[data-attach]");
       const stop = event.target.closest("[data-stop]");
       const del = event.target.closest("[data-delete]");
@@ -1207,6 +1226,7 @@
         showStatusActionMenu(noteStatus);
         return;
       }
+      if (refresh) refreshTask(refresh.dataset.refreshTask);
       if (attach) showAttach(attach.dataset.attach);
       if (stop) stopTask(stop.dataset.stop);
       if (del) deleteTask(del.dataset.delete);
