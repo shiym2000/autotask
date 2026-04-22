@@ -51,6 +51,7 @@
     .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
     .btn.small { min-height: 32px; padding: 5px 8px; font-size: 13px; }
     .btn:disabled { cursor: not-allowed; opacity: .52; }
+    .btn.failed { background: #fff1f1; border-color: var(--bad); color: var(--bad); }
     .btn.loading { opacity: .78; pointer-events: none; }
     .btn.loading::before {
       content: "";
@@ -200,7 +201,8 @@
       margin: 20% auto;
       background: var(--line);
     }
-    .col-name { width: 22%; }
+    .col-name { width: 16%; }
+    .col-refresh { width: 6%; }
     .col-host { width: 9%; }
     .col-gpus { width: 8%; }
     .col-conda { width: 11%; }
@@ -213,7 +215,8 @@
     td:nth-child(4),
     td:nth-child(5),
     td:nth-child(6),
-    td:nth-child(7) {
+    td:nth-child(7),
+    td:nth-child(8) {
       white-space: nowrap;
       overflow-wrap: normal;
     }
@@ -346,6 +349,7 @@
         <table>
           <colgroup>
             <col class="col-name">
+            <col class="col-refresh">
             <col class="col-host">
             <col class="col-gpus">
             <col class="col-conda">
@@ -357,6 +361,7 @@
           <thead>
             <tr>
               <th data-sort="name">任务名</th>
+              <th data-sort="actions">刷新</th>
               <th data-sort="host">服务器</th>
               <th data-sort="gpus">显卡号</th>
               <th data-sort="conda_env">conda环境</th>
@@ -674,6 +679,7 @@
         return `
           <tr>
             <td><span class="task-name" tabindex="0" data-script-path="${escapeHtml(task.script_path || "")}">${escapeHtml(task.name || "")}</span></td>
+            <td><button class="btn small" data-refresh-task="${escapeHtml(task.id)}">刷新</button></td>
             <td>${escapeHtml(task.host || "")}</td>
             <td>${escapeHtml((task.gpus || []).join(","))}</td>
             <td>${escapeHtml(task.conda_env || "不使用")}</td>
@@ -684,7 +690,6 @@
             <td><span class="task-duration" data-end-time="${escapeHtml(endTime)}">${fmtDuration(task)}</span></td>
             <td>
               <div class="task-actions">
-                <button class="btn small" data-refresh-task="${escapeHtml(task.id)}">刷新</button>
                 <button class="btn small" data-attach="${escapeHtml(task.id)}">打开tmux</button>
                 <button class="btn small" data-stop="${escapeHtml(task.id)}"${stopDisabled}>终止程序</button>
                 <button class="btn small" data-delete="${escapeHtml(task.id)}"${deleteDisabled}>删除tmux</button>
@@ -693,13 +698,13 @@
             </td>
           </tr>
         `;
-      }).join("") || `<tr><td colspan="8">${state.tasks.length ? "没有符合筛选条件的任务。" : "还没有任务。"}</td></tr>`;
+      }).join("") || `<tr><td colspan="9">${state.tasks.length ? "没有符合筛选条件的任务。" : "还没有任务。"}</td></tr>`;
       renderSortHeaders();
     }
 
     function enableColumnResize(table) {
       const cols = [...table.querySelectorAll("col")];
-      const minWidths = [140, 76, 68, 96, 86, 116, 84, 154];
+      const minWidths = [110, 60, 76, 68, 96, 86, 116, 84, 154];
       const lockColumnWidths = () => {
         const tableWidth = table.getBoundingClientRect().width;
         table.style.width = `${tableWidth}px`;
@@ -928,7 +933,14 @@
       }
     }
 
-    async function refreshTask(id) {
+    async function refreshTask(id, button) {
+      if (button) {
+        button.classList.remove("failed");
+        button.classList.add("loading");
+        button.disabled = true;
+        button.textContent = "刷新";
+        button.title = "";
+      }
       try {
         const data = await api("/api/tasks/refresh", {
           method: "POST",
@@ -937,6 +949,14 @@
         state.tasks = state.tasks.map((item) => item.id === id ? data.task : item);
         renderTasks();
       } catch (err) {
+        if (button) {
+          button.classList.remove("loading");
+          button.classList.add("failed");
+          button.disabled = false;
+          button.textContent = "失败";
+          button.title = err.message;
+          return;
+        }
         alert(err.message);
       }
     }
@@ -1226,7 +1246,7 @@
         showStatusActionMenu(noteStatus);
         return;
       }
-      if (refresh) refreshTask(refresh.dataset.refreshTask);
+      if (refresh) refreshTask(refresh.dataset.refreshTask, refresh);
       if (attach) showAttach(attach.dataset.attach);
       if (stop) stopTask(stop.dataset.stop);
       if (del) deleteTask(del.dataset.delete);
