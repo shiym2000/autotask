@@ -617,18 +617,6 @@ async def refresh_task_status(task: dict[str, Any]) -> None:
     if is_queued_task(task):
         queue_after_id = str(task.get("queue_after_id", ""))
         queue_after = next((item for item in TASKS if str(item.get("id")) == queue_after_id), None) if queue_after_id else None
-        if queue_after_id and not queue_after:
-            task["status"] = "interrupted"
-            task["last_error"] = "排队目标任务已不存在"
-            mark_task_ended(task)
-            task["updated_at"] = time.time()
-            return
-        if queue_after and queue_after.get("status") not in {"running", "queued", "completed", "finished"}:
-            task["status"] = "interrupted"
-            task["last_error"] = f"排队目标任务 {queue_after.get('name', '')} 已中断"
-            mark_task_ended(task)
-            task["updated_at"] = time.time()
-            return
         start_file = str(task.get("start_file", ""))
         if start_file:
             start_code, stdout, _ = await run_ssh(host, f"cat {shlex.quote(start_file)} 2>/dev/null", timeout=CONNECT_TIMEOUT)
